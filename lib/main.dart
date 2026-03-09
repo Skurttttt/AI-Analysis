@@ -18,9 +18,6 @@ import 'look_engine.dart';
 import 'look_picker.dart';
 import 'painters/makeup_overlay_painter.dart';
 import 'scan_result_page.dart';
-import 'home_screen.dart';
-import 'screens/admin_screen_new.dart';
-import 'auth/login_supabase_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +29,8 @@ Future<void> main() async {
     final envAnonKey = (dotenv.env['SUPABASE_ANON_KEY'] ?? '').trim();
 
     const fallbackUrl = 'https://iqaiebnoodjnoyaiyoez.supabase.co';
-    const fallbackAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxYWllYm5vb2Rqbm95YWl5b2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMzAzNDEsImV4cCI6MjA4NTYwNjM0MX0.2Jvt3WMFpaTYIAE_wff-wlmZfrJNJdXku76cF1x4MFY';
+    const fallbackAnonKey =
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxYWllYm5vb2Rqbm95YWl5b2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMzAzNDEsImV4cCI6MjA4NTYwNjM0MX0.2Jvt3WMFpaTYIAE_wff-wlmZfrJNJdXku76cF1x4MFY';
 
     final resolvedUrl = envUrl.isNotEmpty ? envUrl : fallbackUrl;
     final resolvedAnonKey = envAnonKey.isNotEmpty ? envAnonKey : fallbackAnonKey;
@@ -58,7 +56,6 @@ Future<void> main() async {
       orElse: () => cameras.first,
     );
   } catch (e) {
-    // Camera not available (common on web or emulators)
     debugPrint('Camera access error: $e');
   }
 
@@ -81,168 +78,35 @@ class App extends StatelessWidget {
           primary: const Color(0xFFFF4D97),
         ),
       ),
-      home: const LoginSupabasePage(),
       debugShowCheckedModeBanner: false,
+      home: frontCamera == null
+          ? const NoCameraScreen()
+          : CameraScreen(camera: frontCamera!),
     );
   }
 }
 
-class AuthCheckScreen extends StatelessWidget {
-  const AuthCheckScreen({super.key});
-
-  Future<String> _fetchUserRole({required String userId, String? email}) async {
-    try {
-        final profile = await Supabase.instance.client
-          .from('accounts')
-          .select('role')
-          .eq('id', userId)
-          .single();
-
-      final role = profile['role'] as String?;
-      if (role != null && role.isNotEmpty) {
-        return role.trim().toLowerCase();
-      }
-    } catch (_) {
-      // Fall through to email-based lookup
-    }
-
-    if (email != null && email.isNotEmpty) {
-        final profileByEmail = await Supabase.instance.client
-          .from('accounts')
-          .select('role')
-          .eq('email', email)
-          .single();
-
-      final role = profileByEmail['role'] as String?;
-      if (role != null && role.isNotEmpty) {
-        return role.trim().toLowerCase();
-      }
-    }
-
-    throw 'Role not found for this user.';
-  }
+class NoCameraScreen extends StatelessWidget {
+  const NoCameraScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
-      stream: Supabase.instance.client.auth.onAuthStateChange,
-      builder: (context, snapshot) {
-        // Connection waiting
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        // Check if user is authenticated
-        final session = Supabase.instance.client.auth.currentSession;
-        if (session != null) {
-          return FutureBuilder<String>(
-            future: _fetchUserRole(
-              userId: session.user.id,
-              email: session.user.email,
-            ),
-            builder: (context, roleSnapshot) {
-              if (roleSnapshot.connectionState == ConnectionState.waiting) {
-                return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
-                );
-              }
-
-              if (roleSnapshot.hasError) {
-                return Scaffold(
-                  body: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'Unable to load profile role.',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            roleSnapshot.error.toString(),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.redAccent),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () async {
-                              await Supabase.instance.client.auth.signOut();
-                            },
-                            child: const Text('Sign out'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }
-
-              final role = roleSnapshot.data;
-              if (role == 'admin') {
-                return const AdminScreenNew();
-              }
-
-              return _showRoleDialog(context, role ?? 'unknown', session.user.id, session.user.email ?? 'unknown');
-            },
-          );
-        }
-
-        // User is not logged in, show login page
-        return const LoginSupabasePage();
-      },
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('FaceTune - Beauty & Style'),
+      ),
+      body: const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'No camera available on this device.\nPlease run the app on a physical device with a front camera.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16),
+          ),
+        ),
+      ),
     );
   }
-}
-
-Widget _showRoleDialog(BuildContext context, String role, String userId, String email) {
-  if (role == 'admin') {
-    return const AdminScreenNew();
-  }
-
-  return Scaffold(
-    body: Center(
-      child: AlertDialog(
-        title: const Text('Role Confirmation'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Signed in as non-admin user'),
-            const SizedBox(height: 12),
-            Text('Role: $role'),
-            const SizedBox(height: 6),
-            Text('Email: $email'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await Supabase.instance.client.auth.signOut();
-              if (context.mounted) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => const LoginSupabasePage()),
-                );
-              }
-            },
-            child: const Text('Sign out'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const HomeScreen()),
-              );
-            },
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
-    ),
-  );
 }
 
 // Camera Screen widget for use in navigation
@@ -275,7 +139,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
   CameraController? _controller;
   bool _busy = false;
 
-  // ignore: unused_field
   XFile? _capturedFile;
   ui.Image? _capturedUiImage;
   Face? _detectedFace;
@@ -283,36 +146,25 @@ class _FaceScanPageState extends State<FaceScanPage> {
   FaceProfile? _faceProfile;
   LookResult? _look;
 
-  // ✅ User-controlled intensity (opacity) for makeup overlay
   double _intensity = 0.75;
 
-  // ✅ Day 2: Post-scan quality feedback
-
-  // ✅ Global luminance
   double _sceneLuminance = 0.50;
-
-  // ✅ NEW: per-cheek luminance (0..1)
   double _leftCheekLum = 0.50;
   double _rightCheekLum = 0.50;
 
-  // ===== Live scan quality (Day 2 upgrade) =====
   bool _liveRunning = false;
   DateTime _lastLiveTick = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _liveInterval = Duration(milliseconds: 450);
 
   String _liveQualityLabel = 'Point camera at your face…';
   List<String> _liveWarnings = [];
-  // ignore: unused_field
   double _liveBrightness = 0.0;
 
-  // ✅ Rotation (UV locked to normal)
   final InputImageRotation _liveRotation = InputImageRotation.rotation270deg;
 
-  // ✅ Persistence for face detection
   int _noFaceStreak = 0;
   Face? _lastDetectedFace;
 
-  // ✅ NEW: Look picker state
   MakeupLookPreset _selectedLook = MakeupLookPreset.softGlam;
 
   late final FaceDetector _liveFaceDetector = FaceDetector(
@@ -365,8 +217,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
     }
   }
 
-
-
   @override
   void dispose() {
     _stopLiveQuality();
@@ -383,7 +233,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
     return frame.image;
   }
 
-  // ✅ Global scene luminance estimation (0..1)
   Future<double> _estimateSceneLuminance(ui.Image image) async {
     final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData == null) return 0.5;
@@ -417,7 +266,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
     return (sum / count).clamp(0.0, 1.0);
   }
 
-  // ✅ NEW: average luminance inside a rectangle (0..1)
   Future<double> _avgLuminanceInRect(ui.Image image, Rect rect) async {
     final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData == null) return 0.5;
@@ -486,7 +334,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
         final u = uPlane[uvIndex];
         final v = vPlane[uvIndex];
 
-        // UV locked to normal (NV21 expects V then U)
         nv21[index++] = v;
         nv21[index++] = u;
       }
@@ -497,7 +344,9 @@ class _FaceScanPageState extends State<FaceScanPage> {
 
   InputImage _inputImageFromCameraImageNv21(CameraImage image) {
     if (image.format.group != ImageFormatGroup.yuv420 || image.planes.length != 3) {
-      throw Exception('Unsupported camera stream: group=${image.format.group}, planes=${image.planes.length}');
+      throw Exception(
+        'Unsupported camera stream: group=${image.format.group}, planes=${image.planes.length}',
+      );
     }
 
     final bytes = _yuv420ToNv21(image);
@@ -540,7 +389,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
     final cx = (b.left + b.right) / 2;
     final cy = (b.top + b.bottom) / 2;
 
-    // Reduced margins from 0.15 to 0.08 (8% instead of 15%) for more lenient edge detection
     final marginX = imgW * 0.08;
     final marginY = imgH * 0.08;
 
@@ -607,7 +455,9 @@ class _FaceScanPageState extends State<FaceScanPage> {
         final input = _inputImageFromCameraImageNv21(image);
         final faces = await _liveFaceDetector.processImage(input);
 
-        debugPrint('LIVE faces: ${faces.length}  img=${image.width}x${image.height}  rotation=$_liveRotation');
+        debugPrint(
+          'LIVE faces: ${faces.length}  img=${image.width}x${image.height}  rotation=$_liveRotation',
+        );
 
         Face? face;
         if (faces.isNotEmpty) {
@@ -739,7 +589,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
           .compareTo(a.boundingBox.width * a.boundingBox.height));
       final face = faces.first;
 
-      // ✅ NEW: per-cheek luminance sampling
       final box = face.boundingBox;
       final fw = box.width;
       final fh = box.height;
@@ -778,7 +627,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
         _status = 'Done ✅ Navigating to results…';
       });
 
-      // Navigate to results page with photo
       if (mounted) {
         await Navigator.of(context).push(
           MaterialPageRoute(
@@ -791,8 +639,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
             ),
           ),
         );
-        
-        // When returning from preview, reset capture state
+
         if (mounted) {
           setState(() {
             _capturedFile = null;
@@ -802,8 +649,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
             _look = null;
             _status = 'Tap the preview to capture & scan.';
           });
-          
-          // Restart camera if needed
+
           final c = _controller;
           if (c != null && c.value.isInitialized) {
             await _startLiveQuality(c);
@@ -846,7 +692,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Controls at top
             Container(
               color: Colors.black.withOpacity(0.8),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -886,8 +731,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
                 ],
               ),
             ),
-
-            // Camera in bordered container
             Padding(
               padding: const EdgeInsets.all(12),
               child: GestureDetector(
@@ -903,7 +746,9 @@ class _FaceScanPageState extends State<FaceScanPage> {
                     child: AspectRatio(
                       aspectRatio: 1,
                       child: controller == null || !controller.value.isInitialized
-                          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF4D97)))
+                          ? const Center(
+                              child: CircularProgressIndicator(color: Color(0xFFFF4D97)),
+                            )
                           : Stack(
                               fit: StackFit.expand,
                               children: [
@@ -915,13 +760,10 @@ class _FaceScanPageState extends State<FaceScanPage> {
                                     child: CameraPreview(controller),
                                   ),
                                 ),
-                                
-                                // Face position guide overlay
                                 if (!_busy && _capturedUiImage == null)
                                   CustomPaint(
                                     painter: FaceGuidePainter(),
                                   ),
-                                
                                 if (_busy)
                                   const Align(
                                     alignment: Alignment.center,
@@ -936,8 +778,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
                 ),
               ),
             ),
-
-            // Makeup Look Picker
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: LookPicker(
@@ -945,8 +785,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
                 onChanged: (v) => setState(() => _selectedLook = v),
               ),
             ),
-
-            // Preview (if available)
             if (showPreview)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -964,7 +802,8 @@ class _FaceScanPageState extends State<FaceScanPage> {
                               height: _capturedUiImage!.height.toDouble(),
                               child: Builder(
                                 builder: (context) {
-                                  final bool isDebug = _selectedLook == MakeupLookPreset.debugPainterTest;
+                                  final bool isDebug =
+                                      _selectedLook == MakeupLookPreset.debugPainterTest;
                                   return CustomPaint(
                                     painter: MakeupOverlayPainter(
                                       image: _capturedUiImage!,
@@ -1024,9 +863,14 @@ class _FaceScanPageState extends State<FaceScanPage> {
                           child: SizedBox(
                             height: 40,
                             child: FilledButton.icon(
-                              onPressed: (_faceProfile != null && _look != null) ? _openInstructions : null,
+                              onPressed: (_faceProfile != null && _look != null)
+                                  ? _openInstructions
+                                  : null,
                               icon: const Icon(Icons.list_alt, size: 16),
-                              label: const Text('View Instructions', style: TextStyle(fontSize: 12)),
+                              label: const Text(
+                                'View Instructions',
+                                style: TextStyle(fontSize: 12),
+                              ),
                             ),
                           ),
                         ),
@@ -1039,15 +883,22 @@ class _FaceScanPageState extends State<FaceScanPage> {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => ScanResultPage(scannedItem: widget.scannedItem),
+                                    builder: (context) =>
+                                        ScanResultPage(scannedItem: widget.scannedItem),
                                   ),
                                 );
                               },
                               icon: const Icon(Icons.preview, size: 16),
-                              label: const Text('View Result Screen', style: TextStyle(fontSize: 12)),
+                              label: const Text(
+                                'View Result Screen',
+                                style: TextStyle(fontSize: 12),
+                              ),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFFFF4D97),
-                                side: const BorderSide(color: Color(0xFFFF4D97), width: 2),
+                                side: const BorderSide(
+                                  color: Color(0xFFFF4D97),
+                                  width: 2,
+                                ),
                               ),
                             ),
                           ),
@@ -1060,10 +911,12 @@ class _FaceScanPageState extends State<FaceScanPage> {
             else
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Text(_status, style: const TextStyle(fontSize: 12), textAlign: TextAlign.center),
+                child: Text(
+                  _status,
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
               ),
-
-            // Scan Face Button
             if (_capturedUiImage == null)
               Padding(
                 padding: const EdgeInsets.all(12),
@@ -1094,7 +947,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
   }
 }
 
-// Face Guide Painter - draws guide dots around the face circle
 class FaceGuidePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -1102,15 +954,11 @@ class FaceGuidePainter extends CustomPainter {
       ..color = Colors.white.withOpacity(0.6)
       ..style = PaintingStyle.fill;
 
-    // Draw guide dots around the circle
     const dotRadius = 4.0;
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
 
-    // Draw dots at key positions (top, bottom, left, right, and diagonals)
-    final positions = [
-      0, 45, 90, 135, 180, 225, 270, 315
-    ];
+    final positions = [0, 45, 90, 135, 180, 225, 270, 315];
 
     for (final angle in positions) {
       final radian = angle * 3.14159 / 180;
@@ -1124,7 +972,6 @@ class FaceGuidePainter extends CustomPainter {
   bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
 
-// Camera Frame Painter - draws corner borders
 class CameraFramePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -1137,7 +984,6 @@ class CameraFramePainter extends CustomPainter {
     const cornerLength = 40.0;
     const margin = 20.0;
 
-    // Top-left corner
     canvas.drawLine(
       const Offset(margin, margin),
       const Offset(margin + cornerLength, margin),
@@ -1149,7 +995,6 @@ class CameraFramePainter extends CustomPainter {
       paint,
     );
 
-    // Top-right corner
     canvas.drawLine(
       Offset(size.width - margin, margin),
       Offset(size.width - margin - cornerLength, margin),
@@ -1161,7 +1006,6 @@ class CameraFramePainter extends CustomPainter {
       paint,
     );
 
-    // Bottom-left corner
     canvas.drawLine(
       Offset(margin, size.height - margin),
       Offset(margin + cornerLength, size.height - margin),
@@ -1173,7 +1017,6 @@ class CameraFramePainter extends CustomPainter {
       paint,
     );
 
-    // Bottom-right corner
     canvas.drawLine(
       Offset(size.width - margin, size.height - margin),
       Offset(size.width - margin - cornerLength, size.height - margin),
