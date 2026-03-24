@@ -376,6 +376,81 @@ class _FaceScanPageState extends State<FaceScanPage> {
     return count == 0 ? 0 : (sum / count);
   }
 
+  double _avgYInRectFromCameraImage(CameraImage image, Rect rect) {
+    final yPlane = image.planes[0].bytes;
+    if (yPlane.isEmpty) return 0;
+
+    final width = image.width;
+    final height = image.height;
+    final rowStride = image.planes[0].bytesPerRow;
+
+    final safe = rect.intersect(Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()));
+    if (safe.isEmpty) return 0;
+
+    final stepX = (safe.width / 16).clamp(4, 18).toInt();
+    final stepY = (safe.height / 16).clamp(4, 18).toInt();
+
+    int sum = 0;
+    int count = 0;
+
+    for (int y = safe.top.toInt(); y < safe.bottom.toInt(); y += stepY) {
+      final rowStart = y * rowStride;
+      for (int x = safe.left.toInt(); x < safe.right.toInt(); x += stepX) {
+        final index = rowStart + x;
+        if (index < 0 || index >= yPlane.length) continue;
+
+        sum += yPlane[index];
+        count++;
+      }
+    }
+
+    return count == 0 ? 0 : sum / count;
+  }
+
+  ({double left, double right, double diff}) _estimateFaceSideBalance(
+    CameraImage image,
+    Face face,
+  ) {
+    final box = face.boundingBox;
+    final fw = box.width;
+    final fh = box.height;
+
+    final leftRect = Rect.fromLTWH(
+      box.left + fw * 0.10,
+      box.top + fh * 0.42,
+      fw * 0.26,
+      fh * 0.24,
+    );
+
+    final rightRect = Rect.fromLTWH(
+      box.left + fw * 0.64,
+      box.top + fh * 0.42,
+      fw * 0.26,
+      fh * 0.24,
+    );
+
+    final left = _avgYInRectFromCameraImage(image, leftRect);
+    final right = _avgYInRectFromCameraImage(image, rightRect);
+    final diff = (left - right).abs();
+
+    return (left: left, right: right, diff: diff);
+  }
+
+  bool _isLightingBalanced(double left, double right) {
+    final diff = (left - right).abs();
+
+    // More forgiving for normal indoor lighting
+    return diff <= 35;
+  }
+
+  String _lightingBalanceLabel(double left, double right) {
+    final diff = (left - right).abs();
+
+    if (diff <= 35) return 'Even lighting';
+    if (diff <= 55) return 'Slightly uneven lighting';
+    return 'Uneven lighting';
+  }
+
   String _brightnessLabel(double b) {
     if (b < 60) return 'Too dark';
     if (b < 90) return 'Dim';
@@ -403,6 +478,8 @@ class _FaceScanPageState extends State<FaceScanPage> {
     required int imgW,
     required int imgH,
     required double brightness,
+    double? leftFaceBrightness,
+    double? rightFaceBrightness,
   }) {
     final warnings = <String>[];
 
@@ -422,12 +499,23 @@ class _FaceScanPageState extends State<FaceScanPage> {
     final faceArea = face.boundingBox.width * face.boundingBox.height;
     final imgArea = imgW * imgH;
     final ratio = faceArea / imgArea;
+
     if (ratio < 0.04) {
       warnings.add('Move closer. Your face is too small in the frame.');
     }
 
     if (_isFaceNearEdge(face, imgW, imgH)) {
       warnings.add("Center your face. It's too close to the edge.");
+    }
+
+    if (leftFaceBrightness != null && rightFaceBrightness != null) {
+      final diff = (leftFaceBrightness - rightFaceBrightness).abs();
+
+      if (diff > 55) {
+        warnings.add('Lighting is uneven. Make both sides of your face more evenly lit.');
+      } else if (diff > 35) {
+        warnings.add('Lighting is slightly uneven, but you may still continue.');
+      }
     }
 
     return warnings;
@@ -476,11 +564,29 @@ class _FaceScanPageState extends State<FaceScanPage> {
         final showNoFace = _noFaceStreak >= 3;
         final faceForWarnings = showNoFace ? null : face;
 
+        double? leftFaceBrightness;
+        double? rightFaceBrightness;
+
+        if (face != null) {
+          final balance = _estimateFaceSideBalance(image, face);
+          leftFaceBrightness = balance.left;
+          rightFaceBrightness = balance.right;
+
+          debugPrint(
+            'LIVE face lighting: left=${balance.left.toStringAsFixed(1)} '
+            'right=${balance.right.toStringAsFixed(1)} '
+            'diff=${balance.diff.toStringAsFixed(1)} '
+            'label=${_lightingBalanceLabel(balance.left, balance.right)}',
+          );
+        }
+
         final warnings = _buildLiveWarnings(
           face: faceForWarnings,
           imgW: image.width,
           imgH: image.height,
           brightness: brightness,
+          leftFaceBrightness: leftFaceBrightness,
+          rightFaceBrightness: rightFaceBrightness,
         );
 
         if (mounted) {
@@ -511,11 +617,13 @@ class _FaceScanPageState extends State<FaceScanPage> {
   }
 
   bool _canCaptureNow() {
-    final severe = _liveWarnings.any((w) =>
-        w.toLowerCase().contains('too dark') ||
-        w.toLowerCase().contains('center your face') ||
-        w.toLowerCase().contains('move closer') ||
-        w.toLowerCase().contains('no face detected'));
+    final severe = _liveWarnings.any((w) {
+      final text = w.toLowerCase();
+      return text.contains('too dark') ||
+          text.contains('center your face') ||
+          text.contains('move closer') ||
+          text.contains('no face detected');
+    });
 
     return !severe;
   }
@@ -610,6 +718,14 @@ class _FaceScanPageState extends State<FaceScanPage> {
       final leftLum = await _avgLuminanceInRect(uiImage, leftCheekRect);
       final rightLum = await _avgLuminanceInRect(uiImage, rightCheekRect);
 
+      final cheekDiff = (leftLum - rightLum).abs();
+
+      if (cheekDiff > 0.24) {
+        debugPrint(
+          'Lighting warning only: left=$leftLum right=$rightLum diff=$cheekDiff',
+        );
+      }
+
       setState(() {
         _leftCheekLum = leftLum;
         _rightCheekLum = rightLum;
@@ -636,6 +752,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
               detectedFace: face,
               faceProfile: profile,
               look: look,
+              selectedPreset: _selectedLook,
             ),
           ),
         );
@@ -883,8 +1000,14 @@ class _FaceScanPageState extends State<FaceScanPage> {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) =>
-                                        ScanResultPage(scannedItem: widget.scannedItem),
+                                    builder: (context) => ScanResultPage(
+                                      scannedItem: widget.scannedItem,
+                                      scannedImagePath: _capturedFile?.path,
+                                      detectedFace: _detectedFace,
+                                      faceProfile: _faceProfile,
+                                      look: _look,
+                                      selectedPreset: _selectedLook,
+                                    ),
                                   ),
                                 );
                               },

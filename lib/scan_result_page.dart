@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'utils.dart';
 
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -15,6 +16,7 @@ class ScanResultPage extends StatefulWidget {
   final Face? detectedFace;
   final FaceProfile? faceProfile;
   final LookResult? look;
+  final MakeupLookPreset selectedPreset;
 
   const ScanResultPage({
     super.key,
@@ -23,6 +25,7 @@ class ScanResultPage extends StatefulWidget {
     this.detectedFace,
     this.faceProfile,
     this.look,
+    required this.selectedPreset,
   });
 
   @override
@@ -41,7 +44,7 @@ class _ScanResultPageState extends State<ScanResultPage> {
   // ✅ Painter intensity value (only applies onChangeEnd)
   final ValueNotifier<double> _appliedIntensity = ValueNotifier<double>(0.75);
 
-  final MakeupLookPreset _currentPreset = MakeupLookPreset.softGlam;
+  MakeupLookPreset get _currentPreset => widget.selectedPreset;
 
   // Keep for existing code (unused UI feature)
   String selectedFilter = 'Natural';
@@ -284,12 +287,17 @@ class _ScanResultPageState extends State<ScanResultPage> {
                                 eyeshadowColor: widget.look!.eyeshadowColor,
                                 intensity: intensityValue,
                                 faceShape: widget.faceProfile?.faceShape ?? FaceShape.oval,
-                                preset: MakeupLookPreset.softGlam,
-                                debugMode: false,
+                                preset: _currentPreset,
+                                debugMode: _currentPreset == MakeupLookPreset.debugPainterTest,
                                 isLiveMode: false,
                                 eyelinerStyle: LookEngine
                                     .configFromPreset(_currentPreset, profile: widget.faceProfile)
                                     .eyelinerStyle,
+                                lipFinish: LookEngine
+                                        .configFromPreset(_currentPreset, profile: widget.faceProfile)
+                                        .glossyLips
+                                    ? LipFinish.glossy
+                                    : LipFinish.matte,
                                 skinColor: widget.faceProfile != null
                                     ? Color.fromARGB(
                                         255,
@@ -419,10 +427,10 @@ class _ScanResultPageState extends State<ScanResultPage> {
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.school, size: 18, color: Colors.white),
+                      Icon(Icons.auto_awesome, size: 18, color: Colors.white),
                       SizedBox(width: 6),
                       Text(
-                        'Tutorial',
+                        'Generate AI Tips (GPT)',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
