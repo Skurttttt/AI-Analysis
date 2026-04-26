@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'utils.dart';
 
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -9,6 +8,7 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'instructions_page.dart';
 import 'look_engine.dart';
 import 'painters/makeup_overlay_painter.dart';
+import 'skin_analyzer.dart';
 
 class ScanResultPage extends StatefulWidget {
   final String? scannedImagePath;
@@ -25,7 +25,7 @@ class ScanResultPage extends StatefulWidget {
     this.detectedFace,
     this.faceProfile,
     this.look,
-    required this.selectedPreset,
+    this.selectedPreset = MakeupLookPreset.softGlam,
   });
 
   @override
@@ -34,31 +34,25 @@ class ScanResultPage extends StatefulWidget {
 
 class _ScanResultPageState extends State<ScanResultPage> {
   ui.Image? _uiImage;
-
-  // ✅ Face detected on the SAME resized preview image (Option A)
   Face? _previewFace;
 
-  // ✅ Slider UI value (updates smoothly) - Replaced with ValueNotifier
   final ValueNotifier<double> _sliderValue = ValueNotifier<double>(0.75);
-
-  // ✅ Painter intensity value (only applies onChangeEnd)
   final ValueNotifier<double> _appliedIntensity = ValueNotifier<double>(0.75);
 
-  MakeupLookPreset get _currentPreset => widget.selectedPreset;
+  late final MakeupLookPreset _currentPreset;
 
-  // Keep for existing code (unused UI feature)
   String selectedFilter = 'Natural';
   final List<String> filters = ['Natural', 'Everyday', 'Glam'];
 
   @override
   void initState() {
     super.initState();
+    _currentPreset = widget.selectedPreset;
     _loadPreviewAndDetect();
   }
 
   @override
   void dispose() {
-    // ✅ Dispose ValueNotifiers to prevent memory leaks
     _sliderValue.dispose();
     _appliedIntensity.dispose();
     super.dispose();
@@ -70,8 +64,6 @@ class _ScanResultPageState extends State<ScanResultPage> {
 
     final bytes = await File(path).readAsBytes();
 
-    // ✅ Reduce preview decode size for performance
-    // (Allowed: 640–720px)
     final codec = await ui.instantiateImageCodec(
       bytes,
       targetWidth: 720,
@@ -84,11 +76,9 @@ class _ScanResultPageState extends State<ScanResultPage> {
 
     setState(() {
       _uiImage = previewImage;
-      // fallback until detection completes
       _previewFace = null;
     });
 
-    // ✅ Option A: Detect face on the same resized preview image
     try {
       final tmpFile = await _writeUiImageToTempPng(previewImage);
       final face = await _detectFaceOnFile(tmpFile.path);
@@ -99,11 +89,8 @@ class _ScanResultPageState extends State<ScanResultPage> {
         _previewFace = face;
       });
 
-      // cleanup temp file (optional safe cleanup)
-      // ignore: unawaited_futures
       tmpFile.delete().catchError((_) => tmpFile);
     } catch (_) {
-      // If anything fails, fall back to passed-in face (still functional)
       if (!mounted) return;
       setState(() {
         _previewFace = null;
@@ -126,7 +113,6 @@ class _ScanResultPageState extends State<ScanResultPage> {
   }
 
   Future<Face?> _detectFaceOnFile(String filePath) async {
-    // Ensure landmarks/contours are available for your overlay painters
     final detector = FaceDetector(
       options: FaceDetectorOptions(
         performanceMode: FaceDetectorMode.accurate,
@@ -150,7 +136,8 @@ class _ScanResultPageState extends State<ScanResultPage> {
   @override
   Widget build(BuildContext context) {
     final faceForOverlay = _previewFace ?? widget.detectedFace;
-    final canOverlay = _uiImage != null && faceForOverlay != null && widget.look != null;
+    final canOverlay =
+        _uiImage != null && faceForOverlay != null && widget.look != null;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -173,28 +160,25 @@ class _ScanResultPageState extends State<ScanResultPage> {
       ),
       body: Column(
         children: [
-          // ✅ Non-scrollable content (constrained)
           Expanded(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
+                  SizedBox(
+                    height: 320,
                     child: _buildPhotoContainer(
                       canOverlay: canOverlay,
                       faceForOverlay: faceForOverlay,
                     ),
                   ),
                   const SizedBox(height: 12),
-
-                  // ✅ Performance: apply intensity only onChangeEnd
                   if (_uiImage != null && widget.look != null)
                     Row(
                       children: [
                         const Text('Opacity', style: TextStyle(fontSize: 12)),
                         Expanded(
-                          // ✅ Use ValueListenableBuilder for smooth slider updates
                           child: ValueListenableBuilder<double>(
                             valueListenable: _sliderValue,
                             builder: (context, v, _) {
@@ -204,11 +188,9 @@ class _ScanResultPageState extends State<ScanResultPage> {
                                 max: 1.0,
                                 divisions: 20,
                                 label: '${(v * 100).round()}%',
-                                // ✅ Smooth slider, no heavy rebuild during drag
                                 onChanged: (newV) {
                                   _sliderValue.value = newV;
                                 },
-                                // ✅ Only repaint overlay on release
                                 onChangeEnd: (endV) {
                                   _appliedIntensity.value = endV;
                                 },
@@ -218,8 +200,6 @@ class _ScanResultPageState extends State<ScanResultPage> {
                         ),
                       ],
                     ),
-
-                  // ✅ Keep recommended products feature (non-scrollable constraint)
                   if (widget.scannedItem != null) ...[
                     const SizedBox(height: 12),
                     Text(
@@ -231,14 +211,13 @@ class _ScanResultPageState extends State<ScanResultPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Expanded(child: _buildRecommendedProducts()),
+                    _buildRecommendedProducts(),
                   ],
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
           ),
-
-          // Fixed bottom buttons
           _buildBottomButtons(),
         ],
       ),
@@ -249,8 +228,9 @@ class _ScanResultPageState extends State<ScanResultPage> {
     required bool canOverlay,
     required Face? faceForOverlay,
   }) {
-    final double? aspect =
-        _uiImage != null ? (_uiImage!.width.toDouble() / _uiImage!.height.toDouble()) : null;
+    final double? aspect = _uiImage != null
+        ? (_uiImage!.width.toDouble() / _uiImage!.height.toDouble())
+        : null;
 
     return Container(
       width: double.infinity,
@@ -274,7 +254,6 @@ class _ScanResultPageState extends State<ScanResultPage> {
                       width: _uiImage!.width.toDouble(),
                       height: _uiImage!.height.toDouble(),
                       child: RepaintBoundary(
-                        // ✅ Use ValueListenableBuilder for applied intensity
                         child: ValueListenableBuilder<double>(
                           valueListenable: _appliedIntensity,
                           builder: (context, intensityValue, _) {
@@ -286,18 +265,16 @@ class _ScanResultPageState extends State<ScanResultPage> {
                                 blushColor: widget.look!.blushColor,
                                 eyeshadowColor: widget.look!.eyeshadowColor,
                                 intensity: intensityValue,
-                                faceShape: widget.faceProfile?.faceShape ?? FaceShape.oval,
+                                faceShape:
+                                    widget.faceProfile?.faceShape ??
+                                        FaceShape.oval,
                                 preset: _currentPreset,
-                                debugMode: _currentPreset == MakeupLookPreset.debugPainterTest,
+                                debugMode: false,
                                 isLiveMode: false,
-                                eyelinerStyle: LookEngine
-                                    .configFromPreset(_currentPreset, profile: widget.faceProfile)
-                                    .eyelinerStyle,
-                                lipFinish: LookEngine
-                                        .configFromPreset(_currentPreset, profile: widget.faceProfile)
-                                        .glossyLips
-                                    ? LipFinish.glossy
-                                    : LipFinish.matte,
+                                eyelinerStyle: LookEngine.configFromPreset(
+                                  _currentPreset,
+                                  profile: widget.faceProfile,
+                                ).eyelinerStyle,
                                 skinColor: widget.faceProfile != null
                                     ? Color.fromARGB(
                                         255,
@@ -383,13 +360,22 @@ class _ScanResultPageState extends State<ScanResultPage> {
                   onPressed: () => Navigator.pop(context),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    side: const BorderSide(color: Color(0xFFFF4D97), width: 2),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    side: const BorderSide(
+                      color: Color(0xFFFF4D97),
+                      width: 2,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.arrow_back, size: 18, color: Color(0xFFFF4D97)),
+                      Icon(
+                        Icons.arrow_back,
+                        size: 18,
+                        color: Color(0xFFFF4D97),
+                      ),
                       SizedBox(width: 6),
                       Text(
                         'Back',
@@ -413,6 +399,9 @@ class _ScanResultPageState extends State<ScanResultPage> {
                               builder: (_) => InstructionsPage(
                                 look: widget.look!,
                                 faceProfile: widget.faceProfile,
+                                scannedImagePath: widget.scannedImagePath,
+                                detectedFace: _previewFace ?? widget.detectedFace,
+                                selectedPreset: _currentPreset,
                               ),
                             ),
                           );
@@ -421,16 +410,18 @@ class _ScanResultPageState extends State<ScanResultPage> {
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     backgroundColor: const Color(0xFFFF4D97),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     elevation: 0,
                   ),
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.auto_awesome, size: 18, color: Colors.white),
+                      Icon(Icons.school, size: 18, color: Colors.white),
                       SizedBox(width: 6),
                       Text(
-                        'Generate AI Tips (GPT)',
+                        'Tutorial',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -451,12 +442,18 @@ class _ScanResultPageState extends State<ScanResultPage> {
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 backgroundColor: const Color(0xFFFF4D97),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 elevation: 0,
               ),
               child: const Text(
                 'Buy Products',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
@@ -518,7 +515,10 @@ class _ScanResultPageState extends State<ScanResultPage> {
                       const SizedBox(height: 4),
                       Text(
                         product['brand'] as String,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -527,7 +527,10 @@ class _ScanResultPageState extends State<ScanResultPage> {
                           const SizedBox(width: 4),
                           Text(
                             product['rating'] as String,
-                            style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[700],
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Text(
@@ -555,12 +558,21 @@ class _ScanResultPageState extends State<ScanResultPage> {
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFFF4D97),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                   child: const Text(
                     'Add',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ],
@@ -738,22 +750,33 @@ class _ScanResultPageState extends State<ScanResultPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Buy Products', style: TextStyle(fontWeight: FontWeight.w600)),
-        content: const Text('This will take you to our recommended products for your selected look.'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text(
+          'Buy Products',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        content: const Text(
+          'This will take you to our recommended products for your selected look.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              // Navigate to product page
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFF4D97),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             child: const Text('Continue'),
           ),
