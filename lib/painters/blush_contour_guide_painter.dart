@@ -2,18 +2,19 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
-import '../look_engine.dart';
+import '../config/makeup_look_config.dart';
+import '../config/styles/blush_style.dart';
 
 class BlushContourGuidePainter extends CustomPainter {
   final Face face;
-  final MakeupLookPreset preset;
+  final MakeupLookConfig config;
   final Size imageSize;
   final Color blushColor;
   final Color contourColor;
 
   const BlushContourGuidePainter({
     required this.face,
-    required this.preset,
+    required this.config,
     required this.imageSize,
     this.blushColor = const Color(0xFFFF4D97),
     this.contourColor = const Color(0xFF8B5A3C),
@@ -46,7 +47,7 @@ class BlushContourGuidePainter extends CustomPainter {
 
     if (faceRect.width <= 0 || faceRect.height <= 0) return;
 
-    final style = _styleForPreset(preset);
+    final style = config.blush;
 
     _drawBlushZones(canvas, faceRect, style);
     _drawContourZones(canvas, faceRect, style);
@@ -54,90 +55,10 @@ class BlushContourGuidePainter extends CustomPainter {
     _drawStepLabels(canvas, faceRect, style);
   }
 
-  _BlushContourStyle _styleForPreset(MakeupLookPreset preset) {
-    switch (preset) {
-      case MakeupLookPreset.softGlam:
-        return const _BlushContourStyle(
-          blushY: 0.53,
-          blushX: 0.31,
-          blushW: 0.24,
-          blushH: 0.085,
-          blushAngle: -0.20,
-          contourY: 0.63,
-          contourW: 0.28,
-          contourH: 0.045,
-          contourAngle: -0.28,
-          blushOpacity: 0.22,
-          contourOpacity: 0.18,
-        );
-
-      case MakeupLookPreset.emo:
-        return const _BlushContourStyle(
-          blushY: 0.57,
-          blushX: 0.30,
-          blushW: 0.25,
-          blushH: 0.070,
-          blushAngle: -0.12,
-          contourY: 0.64,
-          contourW: 0.34,
-          contourH: 0.045,
-          contourAngle: -0.18,
-          blushOpacity: 0.16,
-          contourOpacity: 0.24,
-        );
-
-      case MakeupLookPreset.dollKBeauty:
-        return const _BlushContourStyle(
-          blushY: 0.50,
-          blushX: 0.36,
-          blushW: 0.20,
-          blushH: 0.080,
-          blushAngle: -0.06,
-          contourY: 0.64,
-          contourW: 0.20,
-          contourH: 0.035,
-          contourAngle: -0.18,
-          blushOpacity: 0.24,
-          contourOpacity: 0.10,
-        );
-
-      case MakeupLookPreset.bronzedGoddess:
-        return const _BlushContourStyle(
-          blushY: 0.54,
-          blushX: 0.30,
-          blushW: 0.27,
-          blushH: 0.080,
-          blushAngle: -0.30,
-          contourY: 0.63,
-          contourW: 0.34,
-          contourH: 0.050,
-          contourAngle: -0.32,
-          blushOpacity: 0.18,
-          contourOpacity: 0.26,
-        );
-
-      case MakeupLookPreset.boldEditorial:
-      case MakeupLookPreset.debugPainterTest:
-        return const _BlushContourStyle(
-          blushY: 0.53,
-          blushX: 0.29,
-          blushW: 0.30,
-          blushH: 0.085,
-          blushAngle: -0.36,
-          contourY: 0.62,
-          contourW: 0.36,
-          contourH: 0.055,
-          contourAngle: -0.36,
-          blushOpacity: 0.24,
-          contourOpacity: 0.28,
-        );
-    }
-  }
-
   void _drawBlushZones(
     Canvas canvas,
     Rect faceRect,
-    _BlushContourStyle style,
+    BlushContourStyle style,
   ) {
     final blushPaint = Paint()
       ..color = blushColor.withOpacity(style.blushOpacity)
@@ -188,7 +109,7 @@ class BlushContourGuidePainter extends CustomPainter {
   void _drawContourZones(
     Canvas canvas,
     Rect faceRect,
-    _BlushContourStyle style,
+    BlushContourStyle style,
   ) {
     final contourPaint = Paint()
       ..color = contourColor.withOpacity(style.contourOpacity)
@@ -295,7 +216,7 @@ class BlushContourGuidePainter extends CustomPainter {
   void _drawStepLabels(
     Canvas canvas,
     Rect faceRect,
-    _BlushContourStyle style,
+    BlushContourStyle style,
   ) {
     _drawSmallStepLabel(
       canvas,
@@ -461,39 +382,11 @@ class BlushContourGuidePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant BlushContourGuidePainter oldDelegate) {
     return oldDelegate.face != face ||
-        oldDelegate.preset != preset ||
+        oldDelegate.config != config ||
         oldDelegate.imageSize != imageSize ||
         oldDelegate.blushColor != blushColor ||
         oldDelegate.contourColor != contourColor;
   }
-}
-
-class _BlushContourStyle {
-  final double blushY;
-  final double blushX;
-  final double blushW;
-  final double blushH;
-  final double blushAngle;
-  final double contourY;
-  final double contourW;
-  final double contourH;
-  final double contourAngle;
-  final double blushOpacity;
-  final double contourOpacity;
-
-  const _BlushContourStyle({
-    required this.blushY,
-    required this.blushX,
-    required this.blushW,
-    required this.blushH,
-    required this.blushAngle,
-    required this.contourY,
-    required this.contourW,
-    required this.contourH,
-    required this.contourAngle,
-    required this.blushOpacity,
-    required this.contourOpacity,
-  });
 }
 
 class _ImageTransform {

@@ -44,30 +44,6 @@ extension MakeupLookPresetLabel on MakeupLookPreset {
   }
 }
 
-/// ✅ Painter-friendly config (public API kept)
-class MakeupLookConfig {
-  final Color lipColor;
-  final Color blushColor;
-  final Color eyeshadowColor;
-
-  final EyelinerStyle eyelinerStyle;
-
-  /// global intensity multiplier (0..1)
-  final double intensity;
-
-  /// finish intent (your app currently supports matte / glossy)
-  final bool glossyLips;
-
-  const MakeupLookConfig({
-    required this.lipColor,
-    required this.blushColor,
-    required this.eyeshadowColor,
-    required this.eyelinerStyle,
-    required this.intensity,
-    required this.glossyLips,
-  });
-}
-
 /// ✅ Your existing analysis model (kept)
 class FaceProfile {
   final SkinTone skinTone;
@@ -141,333 +117,83 @@ class LookResult {
   });
 }
 
+// ✅ REPLACED LookEngine class with simplified version
 class LookEngine {
-  // ---------------------------
-  // PALETTE SYSTEM (IN-FILE)
-  // ---------------------------
-
-  static const double _minUndertoneConfidence = 0.55;
-  static const double _minSkinConfidence = 0.55;
-
-  static bool _lowSkinConfidence(FaceProfile? p) {
-    if (p == null) return false;
-    return p.skinConfidence < _minSkinConfidence;
-  }
-
-  /// Undertone selection rule:
-  /// - If undertoneConfidence is low -> force neutral
-  /// - Else warm/cool/neutral
-  static Undertone _undertoneKey(FaceProfile? p) {
-    if (p == null) return Undertone.neutral;
-    if (p.undertoneConfidence < _minUndertoneConfidence) return Undertone.neutral;
-    if (p.undertone == Undertone.warm) return Undertone.warm;
-    if (p.undertone == Undertone.cool) return Undertone.cool;
-    return Undertone.neutral;
-  }
-
-  /// Each look: warm/cool/neutral variants including browColor
-  static final Map<MakeupLookPreset, _LookPalette> _palettes = {
-    // 1) Emo
-    MakeupLookPreset.emo: _LookPalette(
-      baseIntensity: 0.88,
-      glossy: false,
-      eyeliner: EyelinerStyle.emoWing,
-      warm: const _LookVariant(
-        lipColor: Color(0xFF5A1E2A),
-        blushColor: Color(0x331A0B10), // minimal
-        eyeshadowColor: Color(0xFF1B1B1F), // charcoal
-        browColor: Color(0xFF3A2A24),
-      ),
-      cool: const _LookVariant(
-        lipColor: Color(0xFF3F1830),
-        blushColor: Color(0x331A0B10),
-        eyeshadowColor: Color(0xFF1B1B1F),
-        browColor: Color(0xFF2B2530),
-      ),
-      neutral: const _LookVariant(
-        lipColor: Color(0xFF4A1F2D),
-        blushColor: Color(0x331A0B10),
-        eyeshadowColor: Color(0xFF1B1B1F),
-        browColor: Color(0xFF2E2626),
-      ),
-    ),
-
-    // 2) Soft Glam
-    MakeupLookPreset.softGlam: _LookPalette(
-      baseIntensity: 0.58,
-      glossy: false,
-      eyeliner: EyelinerStyle.subtle,
-      warm: const _LookVariant(
-        lipColor: Color(0xCCB87962),
-        blushColor: Color(0x66F0B08A),
-        eyeshadowColor: Color(0xFFC7A06B),
-        browColor: Color(0xFF3B2E26),
-      ),
-      cool: const _LookVariant(
-        lipColor: Color(0xCC9B6B7F),
-        blushColor: Color(0x668E6D86),
-        eyeshadowColor: Color(0xFFB08DA4),
-        browColor: Color(0xFF2E2A33),
-      ),
-      neutral: const _LookVariant(
-        lipColor: Color(0xCCB46A6A),
-        blushColor: Color(0x66EFB2A4),
-        eyeshadowColor: Color(0xFFB99A86),
-        browColor: Color(0xFF332D2D),
-      ),
-    ),
-
-    // 3) Doll / K-Beauty
-    MakeupLookPreset.dollKBeauty: _LookPalette(
-      baseIntensity: 0.38,
-      glossy: true,
-      eyeliner: EyelinerStyle.thin,
-      warm: const _LookVariant(
-        lipColor: Color(0xCCB57A62),
-        blushColor: Color(0x66F2A38B),
-        eyeshadowColor: Color(0xFFE8D2B9),
-        browColor: Color(0xFF3A312B),
-      ),
-      cool: const _LookVariant(
-        lipColor: Color(0xCC946B8A),
-        blushColor: Color(0x669B6B8B),
-        eyeshadowColor: Color(0xFFE1D1E4),
-        browColor: Color(0xFF2F2B36),
-      ),
-      neutral: const _LookVariant(
-        lipColor: Color(0xCCA86F7A),
-        blushColor: Color(0x66E9A7B6),
-        eyeshadowColor: Color(0xFFE7D8D1),
-        browColor: Color(0xFF343030),
-      ),
-    ),
-
-    // 4) Bronzed Goddess
-    MakeupLookPreset.bronzedGoddess: _LookPalette(
-      baseIntensity: 0.72,
-      glossy: false,
-      eyeliner: EyelinerStyle.subtle,
-      warm: const _LookVariant(
-        lipColor: Color(0xCC9B5A3A),
-        blushColor: Color(0x66A45B2A),
-        eyeshadowColor: Color(0xFFD08A3A),
-        browColor: Color(0xFF2E2119),
-      ),
-      cool: const _LookVariant(
-        lipColor: Color(0xCC8C5868),
-        blushColor: Color(0x667A4A5A),
-        eyeshadowColor: Color(0xFFB07A63),
-        browColor: Color(0xFF2A242E),
-      ),
-      neutral: const _LookVariant(
-        lipColor: Color(0xCC9A5C4A),
-        blushColor: Color(0x668D5A3B),
-        eyeshadowColor: Color(0xFFC58F54),
-        browColor: Color(0xFF2B2322),
-      ),
-    ),
-
-    // 5) Bold Editorial
-    MakeupLookPreset.boldEditorial: _LookPalette(
-      baseIntensity: 0.90,
-      glossy: false,
-      eyeliner: EyelinerStyle.emoWing, // graphic fallback
-      warm: const _LookVariant(
-        lipColor: Color(0xFF7A1F1B),
-        blushColor: Color(0x668B3B2A),
-        eyeshadowColor: Color(0xFF8B2A1E),
-        browColor: Color(0xFF2B1F1A),
-      ),
-      cool: const _LookVariant(
-        lipColor: Color(0xFF3E1648),
-        blushColor: Color(0x663C3F86),
-        eyeshadowColor: Color(0xFF213A7A),
-        browColor: Color(0xFF221F2A),
-      ),
-      neutral: const _LookVariant(
-        lipColor: Color(0xFF5B1C3D),
-        blushColor: Color(0x667A3D6B),
-        eyeshadowColor: Color(0xFF3B2B66),
-        browColor: Color(0xFF241F26),
-      ),
-    ),
-
-    // 6) Debug preset: non-adaptive, brows LIGHT BROWN
-    MakeupLookPreset.debugPainterTest: _LookPalette(
-      baseIntensity: 1.0,
-      glossy: true,
-      eyeliner: EyelinerStyle.emoWing,
-      warm: const _LookVariant(
-        lipColor: Color(0xFFFF0000),
-        blushColor: Color(0xFFFF00FF),
-        eyeshadowColor: Color(0xFF0000FF),
-        browColor: Color(0xFFB07A4A), // ✅ light brown
-      ),
-      cool: const _LookVariant(
-        lipColor: Color(0xFFFF0000),
-        blushColor: Color(0xFFFF00FF),
-        eyeshadowColor: Color(0xFF0000FF),
-        browColor: Color(0xFFB07A4A),
-      ),
-      neutral: const _LookVariant(
-        lipColor: Color(0xFFFF0000),
-        blushColor: Color(0xFFFF00FF),
-        eyeshadowColor: Color(0xFF0000FF),
-        browColor: Color(0xFFB07A4A),
-      ),
-    ),
-  };
-
-  static _LookVariant _variantFor(MakeupLookPreset preset, FaceProfile? profile) {
-    final pal = _palettes[preset] ?? _palettes[MakeupLookPreset.softGlam]!;
-    if (preset == MakeupLookPreset.debugPainterTest) return pal.neutral;
-
-    final key = _undertoneKey(profile);
-    switch (key) {
-      case Undertone.warm:
-        return pal.warm;
-      case Undertone.cool:
-        return pal.cool;
-      case Undertone.neutral:
-        return pal.neutral;
-    }
-  }
-
-  /// ✅ API kept: configFromPreset(...)
-  static MakeupLookConfig configFromPreset(
-    MakeupLookPreset preset, {
-    FaceProfile? profile,
+  /// ✅ MAIN GENERATOR
+  static LookResult generateLook({
+    required FaceProfile profile,
+    required MakeupLookPreset preset,
   }) {
-    final pal = _palettes[preset] ?? _palettes[MakeupLookPreset.softGlam]!;
-    final v = _variantFor(preset, profile);
-
-    double intensity = pal.baseIntensity;
-    if (preset != MakeupLookPreset.debugPainterTest && _lowSkinConfidence(profile)) {
-      intensity = (intensity * 0.88).clamp(0.0, 1.0);
-    }
-
-    return MakeupLookConfig(
-      lipColor: v.lipColor,
-      blushColor: v.blushColor,
-      eyeshadowColor: v.eyeshadowColor,
-      eyelinerStyle: pal.eyeliner,
-      intensity: intensity,
-      glossyLips: pal.glossy,
-    );
-  }
-
-  /// ✅ NEW: Palette-driven brow color accessor (Option B)
-  static Color browColorFromPreset(
-    MakeupLookPreset preset, {
-    FaceProfile? profile,
-  }) {
-    final v = _variantFor(preset, profile);
-    return v.browColor;
-  }
-
-  /// ✅ API kept: fromPreset(...)
-  /// Face shape affects steps only (NOT colors)
-  static LookResult fromPreset(
-    MakeupLookPreset preset, {
-    FaceProfile? profile,
-  }) {
-    final cfg = configFromPreset(preset, profile: profile);
-    final shape = profile?.faceShape ?? FaceShape.unknown;
-
-    final forcedNeutral = profile != null && profile.undertoneConfidence < _minUndertoneConfidence;
-    final undertoneNote = _undertoneNote(_undertoneKey(profile), forcedNeutral: forcedNeutral);
-    final confidenceNote = _confidenceNote(profile);
-
-    final blushPlacement = _blushPlacement(shape);
-    final eyePlacement = _eyePlacement(shape, preset);
-    final editorialBlush = _editorialBlushPlacement(shape);
-
     switch (preset) {
-      case MakeupLookPreset.emo:
-        return LookResult(
-          lookName: 'Emo',
-          lipstickColor: cfg.lipColor,
-          blushColor: cfg.blushColor,
-          eyeshadowColor: cfg.eyeshadowColor,
-          steps: [
-            'Eyeshadow: smoky charcoal—pack near lash line then blend upward.',
-            eyePlacement,
-            'Eyeliner: emo wing (bold outer lift).',
-            'Blush: minimal—keep cheeks neutral.',
-            'Brows: slightly straighter vibe, soft but defined (instruction only).',
-            'Lips: deep berry/plum (wearable, not pure black).',
-            undertoneNote,
-            confidenceNote,
-          ],
-        );
-
       case MakeupLookPreset.softGlam:
         return LookResult(
           lookName: 'Soft Glam',
-          lipstickColor: cfg.lipColor,
-          blushColor: cfg.blushColor,
-          eyeshadowColor: cfg.eyeshadowColor,
+          lipstickColor: const Color(0xFFD86A7F),
+          blushColor: const Color(0xFFFF9DAA),
+          eyeshadowColor: const Color(0xFFBFA6A0),
           steps: [
-            'Eyeshadow: warm brown/champagne wash + soft depth on outer corner.',
-            eyePlacement,
-            'Blush: peachy + diffused for a smooth gradient.',
-            blushPlacement,
-            'Eyeliner: subtle (defined, not heavy).',
-            'Brows: defined but soft—avoid harsh blocks (instruction only).',
-            undertoneNote,
-            confidenceNote,
+            'Apply a light eyeshadow base all over the lid.',
+            'Blend a medium shade into the crease.',
+            'Add a darker shade to the outer corner for depth.',
+            'Apply blush to the apples of the cheeks.',
+            'Finish with a soft pink lipstick.',
+          ],
+        );
+
+      case MakeupLookPreset.emo:
+        return LookResult(
+          lookName: 'Emo',
+          lipstickColor: const Color(0xFF5A0F1C),
+          blushColor: const Color(0xFF7A1F2B),
+          eyeshadowColor: const Color(0xFF2B1B1B),
+          steps: [
+            'Apply dark smoky eyeshadow all over the lid.',
+            'Blend upward for a gradient effect.',
+            'Apply dramatic eyeliner with a wing.',
+            'Keep blush minimal and muted.',
+            'Finish with dark berry lipstick.',
           ],
         );
 
       case MakeupLookPreset.dollKBeauty:
         return LookResult(
           lookName: 'Doll / K-Beauty',
-          lipstickColor: cfg.lipColor,
-          blushColor: cfg.blushColor,
-          eyeshadowColor: cfg.eyeshadowColor,
+          lipstickColor: const Color(0xFFFFB7C5),
+          blushColor: const Color(0xFFFFC0CB),
+          eyeshadowColor: const Color(0xFFF5E6E8),
           steps: [
-            'Eyeshadow: light, soft wash (keep it airy).',
-            'Eyeliner: thin (no heavy wing).',
-            'Blush: rosy + higher placement for that “doll” effect.',
-            _kBeautyBlushPlacement(shape),
-            'Brows (instruction only): aim for a straighter, softer brow vibe.',
-            undertoneNote,
-            confidenceNote,
+            'Apply light, shimmery eyeshadow all over the lid.',
+            'Use a soft pink blush on the upper cheeks.',
+            'Apply thin, natural eyeliner.',
+            'Finish with gradient lip color.',
           ],
         );
 
       case MakeupLookPreset.bronzedGoddess:
         return LookResult(
           lookName: 'Bronzed Goddess',
-          lipstickColor: cfg.lipColor,
-          blushColor: cfg.blushColor,
-          eyeshadowColor: cfg.eyeshadowColor,
+          lipstickColor: const Color(0xFFD4A373),
+          blushColor: const Color(0xFFE6B89C),
+          eyeshadowColor: const Color(0xFFC49A6C),
           steps: [
-            'Eyeshadow: gold/copper glow—focus shimmer on lid, deepen outer edge.',
-            eyePlacement,
-            'Cheeks: warmer blush/bronzer vibe with more presence.',
-            blushPlacement,
-            'Eyeliner: subtle or thin to keep the bronzed look clean.',
-            'Brows: slightly deeper/stronger to balance bronzed tones (instruction only).',
-            undertoneNote,
-            confidenceNote,
+            'Apply bronze/gold eyeshadow on the lid.',
+            'Warm up the crease with a terracotta shade.',
+            'Apply bronzer/blush hybrid to cheeks.',
+            'Finish with warm nude lipstick.',
           ],
         );
 
       case MakeupLookPreset.boldEditorial:
         return LookResult(
           lookName: 'Bold Editorial',
-          lipstickColor: cfg.lipColor,
-          blushColor: cfg.blushColor,
-          eyeshadowColor: cfg.eyeshadowColor,
+          lipstickColor: const Color(0xFFE63946),
+          blushColor: const Color(0xFFFF6B6B),
+          eyeshadowColor: const Color(0xFF457B9D),
           steps: [
-            'Eyeshadow: unconventional color statement—keep edges intentional.',
-            eyePlacement,
-            'Eyeliner: graphic/dramatic (using emo wing style).',
-            'Blush: stronger contrast—think “editorial structure,” not softness.',
-            editorialBlush,
-            undertoneNote,
-            confidenceNote,
+            'Apply bold, graphic eyeshadow design.',
+            'Use strong, sculpted blush placement.',
+            'Apply dramatic, graphic eyeliner.',
+            'Finish with bold, statement lip color.',
           ],
         );
 
@@ -475,7 +201,7 @@ class LookEngine {
         return const LookResult(
           lookName: '🔧 Debug Painter Test',
           lipstickColor: Color(0xFFFF0000),
-          blushColor: Color.fromARGB(102, 255, 112, 195), // ✅ soft pink w/ alpha (smooth on camera)
+          blushColor: Color.fromARGB(102, 255, 112, 195),
           eyeshadowColor: Color(0xFF0000FF),
           steps: [
             'This is a DEBUG mode to test all painters.',
@@ -491,167 +217,65 @@ class LookEngine {
     }
   }
 
-  // ---------------------------
-  // FACE-SHAPE PLACEMENT NOTES
-  // ---------------------------
-
-  static String _blushPlacement(FaceShape faceShape) {
-    switch (faceShape) {
-      case FaceShape.round:
-        return 'Blush placement: slightly higher and outward to lift.';
-      case FaceShape.square:
-        return 'Blush placement: soften corners by blending diffused and diagonal.';
-      case FaceShape.heart:
-        return 'Blush placement: focus on outer cheeks, keep center soft.';
-      case FaceShape.oval:
-        return 'Blush placement: classic apples → blend up.';
-      case FaceShape.unknown:
-        return 'Blush placement: apply on apples and blend upward softly.';
-    }
-  }
-
-  static String _kBeautyBlushPlacement(FaceShape faceShape) {
-    switch (faceShape) {
-      case FaceShape.round:
-        return 'Blush placement (K-Beauty): high on upper cheek, pulled outward for lift.';
-      case FaceShape.square:
-        return 'Blush placement (K-Beauty): high + softly diffused to soften angles.';
-      case FaceShape.heart:
-        return 'Blush placement (K-Beauty): high on outer cheeks; keep center airy.';
-      case FaceShape.oval:
-        return 'Blush placement (K-Beauty): high on cheekbones for a youthful flush.';
-      case FaceShape.unknown:
-        return 'Blush placement (K-Beauty): keep it higher on the cheekbones, very soft blend.';
-    }
-  }
-
-  static String _editorialBlushPlacement(FaceShape faceShape) {
-    switch (faceShape) {
-      case FaceShape.round:
-        return 'Blush placement (Editorial): sharper diagonal up toward temples to sculpt and lift.';
-      case FaceShape.square:
-        return 'Blush placement (Editorial): angled but softly blended to avoid harsh jaw emphasis.';
-      case FaceShape.heart:
-        return 'Blush placement (Editorial): angular sweep on outer cheeks; keep center minimal.';
-      case FaceShape.oval:
-        return 'Blush placement (Editorial): defined diagonal along cheekbone, then soften the edge.';
-      case FaceShape.unknown:
-        return 'Blush placement (Editorial): place higher on cheekbone with a clean diagonal direction.';
-    }
-  }
-
-  static String _eyePlacement(FaceShape faceShape, MakeupLookPreset preset) {
-    final isDramatic = preset == MakeupLookPreset.emo || preset == MakeupLookPreset.boldEditorial;
-    switch (faceShape) {
-      case FaceShape.round:
-        return isDramatic
-            ? 'Eye placement: build depth on the outer third + extend slightly outward for lift.'
-            : 'Eye placement: keep shadow pulled slightly outward (outer third) to elongate.';
-      case FaceShape.square:
-        return isDramatic
-            ? 'Eye placement: keep edges blended/soft (avoid too sharp) to soften angles.'
-            : 'Eye placement: use softer outer blending; keep liner subtle for a softer shape.';
-      case FaceShape.heart:
-        return 'Eye placement: emphasize outer corner, keep inner corner lighter.';
-      case FaceShape.oval:
-        return 'Eye placement: balanced—outer corner depth + smooth blend.';
-      case FaceShape.unknown:
-        return 'Eye placement: focus on outer corner depth with a soft blend upward.';
-    }
-  }
-
-  static String _undertoneNote(Undertone u, {required bool forcedNeutral}) {
-    if (forcedNeutral) {
-      return 'Undertone: uncertain → using neutral/balanced shades for safer camera results.';
-    }
-    switch (u) {
-      case Undertone.warm:
-        return 'Undertone: warm → leaning peach/gold/copper where it fits the look.';
-      case Undertone.cool:
-        return 'Undertone: cool → leaning rose/mauve/plum where it fits the look.';
-      case Undertone.neutral:
-        return 'Undertone: neutral → using balanced shades.';
-    }
-  }
-
-  static String _confidenceNote(FaceProfile? p) {
-    if (p == null) return 'Profile: no analysis → using default settings.';
-    if (!_lowSkinConfidence(p)) return 'Skin confidence: good → using full look intensity.';
-    return 'Skin confidence: low → slightly reduced intensity to blend more naturally.';
-  }
-
-  // ---------------------------
-  // PUBLIC API HELPERS (KEPT)
-  // ---------------------------
-
-  static EyelinerStyle eyelinerStyleFromPreset(MakeupLookPreset preset) {
+  /// ✅ EYELINER STYLE (used by overlay)
+  static EyelinerStyle eyelinerStyleFromPreset(
+    MakeupLookPreset preset,
+  ) {
     switch (preset) {
       case MakeupLookPreset.softGlam:
         return EyelinerStyle.subtle;
-      case MakeupLookPreset.dollKBeauty:
-        return EyelinerStyle.thin;
-      case MakeupLookPreset.bronzedGoddess:
-        return EyelinerStyle.subtle;
+
       case MakeupLookPreset.emo:
         return EyelinerStyle.emoWing;
+        
+      case MakeupLookPreset.dollKBeauty:
+        return EyelinerStyle.thin;
+        
+      case MakeupLookPreset.bronzedGoddess:
+        return EyelinerStyle.subtle;
+        
       case MakeupLookPreset.boldEditorial:
         return EyelinerStyle.emoWing;
+        
       case MakeupLookPreset.debugPainterTest:
         return EyelinerStyle.emoWing;
     }
   }
 
+  /// ✅ BROW COLOR (used by brow painter)
+  static Color browColorFromPreset(MakeupLookPreset preset) {
+    switch (preset) {
+      case MakeupLookPreset.softGlam:
+        return const Color(0xFF6D4C41);
+      case MakeupLookPreset.emo:
+        return const Color(0xFF1A1A1A);
+      case MakeupLookPreset.dollKBeauty:
+        return const Color(0xFF5D4037);
+      case MakeupLookPreset.bronzedGoddess:
+        return const Color(0xFF4E342E);
+      case MakeupLookPreset.boldEditorial:
+        return const Color(0xFF3E2723);
+      case MakeupLookPreset.debugPainterTest:
+        return const Color(0xFFB07A4A); // Light brown for debug
+    }
+  }
+
+  /// ✅ BLUSH STYLE (used by blush painter)
+  // ✅ FIXED: Changed from dynamic to String return type
   static String blushStyleFromPreset(MakeupLookPreset preset) {
     switch (preset) {
-      case MakeupLookPreset.dollKBeauty:
-        return 'high';
       case MakeupLookPreset.softGlam:
-        return 'diffused';
-      case MakeupLookPreset.bronzedGoddess:
-        return 'bronzed';
+        return 'soft';
       case MakeupLookPreset.emo:
-        return 'minimal';
+        return 'sharp';
+      case MakeupLookPreset.dollKBeauty:
+        return 'soft';
+      case MakeupLookPreset.bronzedGoddess:
+        return 'warm';
       case MakeupLookPreset.boldEditorial:
-        return 'angular';
+        return 'sharp';
       case MakeupLookPreset.debugPainterTest:
         return 'bold';
     }
   }
-}
-
-// ---------------------------
-// INTERNAL (NO NEW FILES)
-// ---------------------------
-
-class _LookVariant {
-  final Color lipColor;
-  final Color blushColor;
-  final Color eyeshadowColor;
-  final Color browColor;
-
-  const _LookVariant({
-    required this.lipColor,
-    required this.blushColor,
-    required this.eyeshadowColor,
-    required this.browColor,
-  });
-}
-
-class _LookPalette {
-  final _LookVariant warm;
-  final _LookVariant cool;
-  final _LookVariant neutral;
-
-  final double baseIntensity;
-  final bool glossy;
-  final EyelinerStyle eyeliner;
-
-  const _LookPalette({
-    required this.warm,
-    required this.cool,
-    required this.neutral,
-    required this.baseIntensity,
-    required this.glossy,
-    required this.eyeliner,
-  });
 }

@@ -107,6 +107,10 @@ class EyebrowPainter {
   static final Map<String, DateTime> _lastGoodTouched = {};
   static final Map<String, int> _missingFrames = {};
 
+  // Ultra performance: cache pruning should not scan maps every paint.
+  static DateTime _lastPrune = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _pruneInterval = Duration(seconds: 2);
+
   // ✅ FIX #2: Use braces for string interpolation
   String _key(String side) {
     final tid = face.trackingId;
@@ -118,6 +122,9 @@ class EyebrowPainter {
 
   void _pruneCaches() {
     final now = DateTime.now();
+    if (now.difference(_lastPrune) < _pruneInterval) return;
+    _lastPrune = now;
+
     final dead = <String>[];
 
     _emaTouched.forEach((k, t) {
@@ -147,7 +154,7 @@ class EyebrowPainter {
 
   void paint(Canvas canvas, Size size) {
     final k0 = intensity.clamp(0.0, 1.0);
-    if (k0 <= 0.0) return;
+    if (k0 <= 0.001) return;
 
     _pruneCaches();
 

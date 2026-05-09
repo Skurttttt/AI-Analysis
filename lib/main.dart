@@ -1,4 +1,3 @@
-// main.dart
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'dart:math' show cos, sin;
@@ -23,7 +22,6 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: "assets/.env");
 
-  // Initialize Supabase
   try {
     final envUrl = (dotenv.env['SUPABASE_URL'] ?? '').trim();
     final envAnonKey = (dotenv.env['SUPABASE_ANON_KEY'] ?? '').trim();
@@ -32,18 +30,10 @@ Future<void> main() async {
     const fallbackAnonKey =
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxYWllYm5vb2Rqbm95YWl5b2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMzAzNDEsImV4cCI6MjA4NTYwNjM0MX0.2Jvt3WMFpaTYIAE_wff-wlmZfrJNJdXku76cF1x4MFY';
 
-    final resolvedUrl = envUrl.isNotEmpty ? envUrl : fallbackUrl;
-    final resolvedAnonKey = envAnonKey.isNotEmpty ? envAnonKey : fallbackAnonKey;
-
-    if (envUrl.isEmpty || envAnonKey.isEmpty) {
-      debugPrint('⚠️ Supabase env missing. Using fallback credentials.');
-    }
-
     await Supabase.initialize(
-      url: resolvedUrl,
-      anonKey: resolvedAnonKey,
+      url: envUrl.isNotEmpty ? envUrl : fallbackUrl,
+      anonKey: envAnonKey.isNotEmpty ? envAnonKey : fallbackAnonKey,
     );
-    debugPrint('✅ Supabase initialized successfully');
   } catch (e) {
     debugPrint('❌ Supabase initialization error: $e');
   }
@@ -91,17 +81,13 @@ class NoCameraScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('FaceTune - Beauty & Style'),
-      ),
-      body: const Center(
+    return const Scaffold(
+      body: Center(
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Text(
             'No camera available on this device.\nPlease run the app on a physical device with a front camera.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16),
           ),
         ),
       ),
@@ -109,10 +95,10 @@ class NoCameraScreen extends StatelessWidget {
   }
 }
 
-// Camera Screen widget for use in navigation
 class CameraScreen extends StatefulWidget {
   final CameraDescription camera;
   final String? scannedItem;
+
   const CameraScreen({super.key, required this.camera, this.scannedItem});
 
   @override
@@ -129,6 +115,7 @@ class _CameraScreenState extends State<CameraScreen> {
 class FaceScanPage extends StatefulWidget {
   final CameraDescription camera;
   final String? scannedItem;
+
   const FaceScanPage({super.key, required this.camera, this.scannedItem});
 
   @override
@@ -158,7 +145,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
 
   String _liveQualityLabel = 'Point camera at your face…';
   List<String> _liveWarnings = [];
-  double _liveBrightness = 0.0;
 
   final InputImageRotation _liveRotation = InputImageRotation.rotation270deg;
 
@@ -207,10 +193,13 @@ class _FaceScanPageState extends State<FaceScanPage> {
       await controller.initialize();
       await controller.setFlashMode(FlashMode.off);
       await controller.setFocusMode(FocusMode.auto);
+
       if (!mounted) return;
+
       setState(() {
         _controller = controller;
       });
+
       await _startLiveQuality(controller);
     } catch (e) {
       setState(() => _status = 'Camera init error: $e');
@@ -256,14 +245,12 @@ class _FaceScanPageState extends State<FaceScanPage> {
         final g = bytes[i + 1] / 255.0;
         final b = bytes[i + 2] / 255.0;
 
-        final lum = (0.2126 * r + 0.7152 * g + 0.0722 * b);
-        sum += lum;
+        sum += (0.2126 * r + 0.7152 * g + 0.0722 * b);
         count++;
       }
     }
 
-    if (count == 0) return 0.5;
-    return (sum / count).clamp(0.0, 1.0);
+    return count == 0 ? 0.5 : (sum / count).clamp(0.0, 1.0);
   }
 
   Future<double> _avgLuminanceInRect(ui.Image image, Rect rect) async {
@@ -292,50 +279,42 @@ class _FaceScanPageState extends State<FaceScanPage> {
         final g = bytes[i + 1] / 255.0;
         final b = bytes[i + 2] / 255.0;
 
-        final lum = (0.2126 * r + 0.7152 * g + 0.0722 * b);
-        sum += lum;
+        sum += (0.2126 * r + 0.7152 * g + 0.0722 * b);
         count++;
       }
     }
 
-    if (count == 0) return 0.5;
-    return (sum / count).clamp(0.0, 1.0);
+    return count == 0 ? 0.5 : (sum / count).clamp(0.0, 1.0);
   }
 
   Uint8List _yuv420ToNv21(CameraImage image) {
-    final int width = image.width;
-    final int height = image.height;
+    final width = image.width;
+    final height = image.height;
 
-    final Uint8List yPlane = image.planes[0].bytes;
-    final Uint8List uPlane = image.planes[1].bytes;
-    final Uint8List vPlane = image.planes[2].bytes;
+    final yPlane = image.planes[0].bytes;
+    final uPlane = image.planes[1].bytes;
+    final vPlane = image.planes[2].bytes;
 
-    final int yRowStride = image.planes[0].bytesPerRow;
-    final int uvRowStride = image.planes[1].bytesPerRow;
-    final int uvPixelStride = image.planes[1].bytesPerPixel ?? 1;
+    final yRowStride = image.planes[0].bytesPerRow;
+    final uvRowStride = image.planes[1].bytesPerRow;
+    final uvPixelStride = image.planes[1].bytesPerPixel ?? 1;
 
-    final Uint8List nv21 = Uint8List(width * height + (width * height ~/ 2));
+    final nv21 = Uint8List(width * height + (width * height ~/ 2));
     int index = 0;
 
     for (int row = 0; row < height; row++) {
-      final int yRowStart = row * yRowStride;
+      final yRowStart = row * yRowStride;
       for (int col = 0; col < width; col++) {
         nv21[index++] = yPlane[yRowStart + col];
       }
     }
 
-    final int uvHeight = height ~/ 2;
-    final int uvWidth = width ~/ 2;
-
-    for (int row = 0; row < uvHeight; row++) {
-      final int uvRowStart = row * uvRowStride;
-      for (int col = 0; col < uvWidth; col++) {
-        final int uvIndex = uvRowStart + col * uvPixelStride;
-        final u = uPlane[uvIndex];
-        final v = vPlane[uvIndex];
-
-        nv21[index++] = v;
-        nv21[index++] = u;
+    for (int row = 0; row < height ~/ 2; row++) {
+      final uvRowStart = row * uvRowStride;
+      for (int col = 0; col < width ~/ 2; col++) {
+        final uvIndex = uvRowStart + col * uvPixelStride;
+        nv21[index++] = vPlane[uvIndex];
+        nv21[index++] = uPlane[uvIndex];
       }
     }
 
@@ -343,12 +322,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
   }
 
   InputImage _inputImageFromCameraImageNv21(CameraImage image) {
-    if (image.format.group != ImageFormatGroup.yuv420 || image.planes.length != 3) {
-      throw Exception(
-        'Unsupported camera stream: group=${image.format.group}, planes=${image.planes.length}',
-      );
-    }
-
     final bytes = _yuv420ToNv21(image);
 
     final metadata = InputImageMetadata(
@@ -373,104 +346,8 @@ class _FaceScanPageState extends State<FaceScanPage> {
       sum += yPlane[i];
       count++;
     }
-    return count == 0 ? 0 : (sum / count);
-  }
-
-  double _avgYInRectFromCameraImage(CameraImage image, Rect rect) {
-    final yPlane = image.planes[0].bytes;
-    if (yPlane.isEmpty) return 0;
-
-    final width = image.width;
-    final height = image.height;
-    final rowStride = image.planes[0].bytesPerRow;
-
-    final safe = rect.intersect(Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()));
-    if (safe.isEmpty) return 0;
-
-    final stepX = (safe.width / 16).clamp(4, 18).toInt();
-    final stepY = (safe.height / 16).clamp(4, 18).toInt();
-
-    int sum = 0;
-    int count = 0;
-
-    for (int y = safe.top.toInt(); y < safe.bottom.toInt(); y += stepY) {
-      final rowStart = y * rowStride;
-      for (int x = safe.left.toInt(); x < safe.right.toInt(); x += stepX) {
-        final index = rowStart + x;
-        if (index < 0 || index >= yPlane.length) continue;
-
-        sum += yPlane[index];
-        count++;
-      }
-    }
 
     return count == 0 ? 0 : sum / count;
-  }
-
-  ({double left, double right, double diff}) _estimateFaceSideBalance(
-    CameraImage image,
-    Face face,
-  ) {
-    final box = face.boundingBox;
-    final fw = box.width;
-    final fh = box.height;
-
-    final leftRect = Rect.fromLTWH(
-      box.left + fw * 0.10,
-      box.top + fh * 0.42,
-      fw * 0.26,
-      fh * 0.24,
-    );
-
-    final rightRect = Rect.fromLTWH(
-      box.left + fw * 0.64,
-      box.top + fh * 0.42,
-      fw * 0.26,
-      fh * 0.24,
-    );
-
-    final left = _avgYInRectFromCameraImage(image, leftRect);
-    final right = _avgYInRectFromCameraImage(image, rightRect);
-    final diff = (left - right).abs();
-
-    return (left: left, right: right, diff: diff);
-  }
-
-  bool _isLightingBalanced(double left, double right) {
-    final diff = (left - right).abs();
-
-    // More forgiving for normal indoor lighting
-    return diff <= 35;
-  }
-
-  String _lightingBalanceLabel(double left, double right) {
-    final diff = (left - right).abs();
-
-    if (diff <= 35) return 'Even lighting';
-    if (diff <= 55) return 'Slightly uneven lighting';
-    return 'Uneven lighting';
-  }
-
-  String _brightnessLabel(double b) {
-    if (b < 60) return 'Too dark';
-    if (b < 90) return 'Dim';
-    if (b < 170) return 'Good';
-    return 'Very bright';
-  }
-
-  bool _isFaceNearEdge(Face face, int imgW, int imgH) {
-    final b = face.boundingBox;
-
-    final cx = (b.left + b.right) / 2;
-    final cy = (b.top + b.bottom) / 2;
-
-    final marginX = imgW * 0.08;
-    final marginY = imgH * 0.08;
-
-    final insideX = cx > marginX && cx < (imgW - marginX);
-    final insideY = cy > marginY && cy < (imgH - marginY);
-
-    return !(insideX && insideY);
   }
 
   List<String> _buildLiveWarnings({
@@ -478,8 +355,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
     required int imgW,
     required int imgH,
     required double brightness,
-    double? leftFaceBrightness,
-    double? rightFaceBrightness,
   }) {
     final warnings = <String>[];
 
@@ -487,8 +362,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
       warnings.add('Too dark. Move to a brighter area or face a light source.');
     } else if (brightness < 90) {
       warnings.add('Lighting is dim. Try brighter and even lighting.');
-    } else if (brightness > 210) {
-      warnings.add('Very bright. Avoid harsh light directly hitting the face.');
     }
 
     if (face == null) {
@@ -504,20 +377,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
       warnings.add('Move closer. Your face is too small in the frame.');
     }
 
-    if (_isFaceNearEdge(face, imgW, imgH)) {
-      warnings.add("Center your face. It's too close to the edge.");
-    }
-
-    if (leftFaceBrightness != null && rightFaceBrightness != null) {
-      final diff = (leftFaceBrightness - rightFaceBrightness).abs();
-
-      if (diff > 55) {
-        warnings.add('Lighting is uneven. Make both sides of your face more evenly lit.');
-      } else if (diff > 35) {
-        warnings.add('Lighting is slightly uneven, but you may still continue.');
-      }
-    }
-
     return warnings;
   }
 
@@ -527,8 +386,16 @@ class _FaceScanPageState extends State<FaceScanPage> {
     return 'Low ⚠️';
   }
 
+  String _brightnessLabel(double b) {
+    if (b < 60) return 'Too dark';
+    if (b < 90) return 'Dim';
+    if (b < 170) return 'Good';
+    return 'Very bright';
+  }
+
   Future<void> _startLiveQuality(CameraController controller) async {
     if (_liveRunning) return;
+
     _liveRunning = true;
 
     await controller.startImageStream((CameraImage image) async {
@@ -543,55 +410,32 @@ class _FaceScanPageState extends State<FaceScanPage> {
         final input = _inputImageFromCameraImageNv21(image);
         final faces = await _liveFaceDetector.processImage(input);
 
-        debugPrint(
-          'LIVE faces: ${faces.length}  img=${image.width}x${image.height}  rotation=$_liveRotation',
-        );
-
         Face? face;
+
         if (faces.isNotEmpty) {
           faces.sort((a, b) => (b.boundingBox.width * b.boundingBox.height)
               .compareTo(a.boundingBox.width * a.boundingBox.height));
+
           face = faces.first;
           _lastDetectedFace = face;
           _noFaceStreak = 0;
         } else {
           _noFaceStreak++;
+
           if (_noFaceStreak < 3 && _lastDetectedFace != null) {
             face = _lastDetectedFace;
           }
         }
 
-        final showNoFace = _noFaceStreak >= 3;
-        final faceForWarnings = showNoFace ? null : face;
-
-        double? leftFaceBrightness;
-        double? rightFaceBrightness;
-
-        if (face != null) {
-          final balance = _estimateFaceSideBalance(image, face);
-          leftFaceBrightness = balance.left;
-          rightFaceBrightness = balance.right;
-
-          debugPrint(
-            'LIVE face lighting: left=${balance.left.toStringAsFixed(1)} '
-            'right=${balance.right.toStringAsFixed(1)} '
-            'diff=${balance.diff.toStringAsFixed(1)} '
-            'label=${_lightingBalanceLabel(balance.left, balance.right)}',
-          );
-        }
-
         final warnings = _buildLiveWarnings(
-          face: faceForWarnings,
+          face: _noFaceStreak >= 3 ? null : face,
           imgW: image.width,
           imgH: image.height,
           brightness: brightness,
-          leftFaceBrightness: leftFaceBrightness,
-          rightFaceBrightness: rightFaceBrightness,
         );
 
         if (mounted) {
           setState(() {
-            _liveBrightness = brightness;
             _liveWarnings = warnings;
             _liveQualityLabel =
                 '${_liveQualityFromWarnings(warnings)} • ${_brightnessLabel(brightness)}';
@@ -600,17 +444,17 @@ class _FaceScanPageState extends State<FaceScanPage> {
       } catch (e) {
         if (mounted) {
           setState(() {
-            _liveQualityLabel = 'Live Scan Quality: Error (see logs)';
+            _liveQualityLabel = 'Live Scan Quality: Error';
             _liveWarnings = ['Live analyzer error: $e'];
           });
         }
-        debugPrint('LIVE ANALYZER ERROR: $e');
       }
     });
   }
 
   Future<void> _stopLiveQuality() async {
     _liveRunning = false;
+
     try {
       await _controller?.stopImageStream();
     } catch (_) {}
@@ -620,7 +464,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
     final severe = _liveWarnings.any((w) {
       final text = w.toLowerCase();
       return text.contains('too dark') ||
-          text.contains('center your face') ||
           text.contains('move closer') ||
           text.contains('no face detected');
     });
@@ -631,7 +474,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
   void _showCaptureBlockedMessage() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Fix live scan tips first (lighting/center/closer) before capturing.'),
+        content: Text('Fix live scan tips first before capturing.'),
         duration: Duration(seconds: 2),
       ),
     );
@@ -639,10 +482,12 @@ class _FaceScanPageState extends State<FaceScanPage> {
 
   void _handlePreviewTap() {
     if (_busy) return;
+
     if (!_canCaptureNow()) {
       _showCaptureBlockedMessage();
       return;
     }
+
     _captureAndScan();
   }
 
@@ -653,8 +498,8 @@ class _FaceScanPageState extends State<FaceScanPage> {
     }
 
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
-    if (_busy) return;
+
+    if (controller == null || !controller.value.isInitialized || _busy) return;
 
     setState(() {
       _busy = true;
@@ -675,7 +520,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
 
       final file = await controller.takePicture();
       final uiImage = await _loadUiImageFromFile(file.path);
-
       final sceneLum = await _estimateSceneLuminance(uiImage);
 
       setState(() {
@@ -689,12 +533,13 @@ class _FaceScanPageState extends State<FaceScanPage> {
       final faces = await _faceDetector.processImage(inputImage);
 
       if (faces.isEmpty) {
-        setState(() => _status = 'No face detected. Try better lighting and face the camera.');
+        setState(() => _status = 'No face detected. Try better lighting.');
         return;
       }
 
       faces.sort((a, b) => (b.boundingBox.width * b.boundingBox.height)
           .compareTo(a.boundingBox.width * a.boundingBox.height));
+
       final face = faces.first;
 
       final box = face.boundingBox;
@@ -718,14 +563,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
       final leftLum = await _avgLuminanceInRect(uiImage, leftCheekRect);
       final rightLum = await _avgLuminanceInRect(uiImage, rightCheekRect);
 
-      final cheekDiff = (leftLum - rightLum).abs();
-
-      if (cheekDiff > 0.24) {
-        debugPrint(
-          'Lighting warning only: left=$leftLum right=$rightLum diff=$cheekDiff',
-        );
-      }
-
       setState(() {
         _leftCheekLum = leftLum;
         _rightCheekLum = rightLum;
@@ -734,7 +571,11 @@ class _FaceScanPageState extends State<FaceScanPage> {
 
       final skin = await SkinAnalyzer.analyze(uiImage, face);
       final profile = FaceProfile.fromAnalysis(face, skin);
-      final look = LookEngine.fromPreset(_selectedLook, profile: profile);
+
+      final look = LookEngine.generateLook(
+        profile: profile,
+        preset: _selectedLook,
+      );
 
       setState(() {
         _detectedFace = face;
@@ -776,7 +617,10 @@ class _FaceScanPageState extends State<FaceScanPage> {
     } catch (e) {
       setState(() => _status = 'Error: $e');
     } finally {
-      setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+
       final c = _controller;
       if (c != null && c.value.isInitialized) {
         await _startLiveQuality(c);
@@ -790,7 +634,13 @@ class _FaceScanPageState extends State<FaceScanPage> {
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => InstructionsPage(look: look),
+        builder: (_) => InstructionsPage(
+          look: look,
+          faceProfile: _faceProfile,
+          scannedImagePath: _capturedFile?.path,
+          detectedFace: _detectedFace,
+          selectedPreset: _selectedLook,
+        ),
       ),
     );
   }
@@ -798,7 +648,10 @@ class _FaceScanPageState extends State<FaceScanPage> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    final bool showPreview = _capturedUiImage != null && _detectedFace != null && _look != null;
+
+    final bool showPreview =
+        _capturedUiImage != null && _detectedFace != null && _look != null;
+
     final bool showSlider = showPreview && _faceProfile != null;
 
     return Scaffold(
@@ -813,48 +666,37 @@ class _FaceScanPageState extends State<FaceScanPage> {
               color: Colors.black.withOpacity(0.8),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Quality: $_liveQualityLabel',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 11,
-                              ),
-                            ),
-                            if (_liveWarnings.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                _liveWarnings.take(1).join(' • '),
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
+                  Text(
+                    'Quality: $_liveQualityLabel',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                    ),
                   ),
+                  if (_liveWarnings.isNotEmpty)
+                    Text(
+                      _liveWarnings.take(1).join(' • '),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                      ),
+                    ),
                 ],
               ),
             ),
+
             Padding(
               padding: const EdgeInsets.all(12),
               child: GestureDetector(
                 onTap: _handlePreviewTap,
                 child: Container(
                   decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFFFF4D97), width: 2),
+                    border: Border.all(
+                      color: const Color(0xFFFF4D97),
+                      width: 2,
+                    ),
                     borderRadius: BorderRadius.circular(12),
                     color: Colors.black,
                   ),
@@ -864,7 +706,9 @@ class _FaceScanPageState extends State<FaceScanPage> {
                       aspectRatio: 1,
                       child: controller == null || !controller.value.isInitialized
                           ? const Center(
-                              child: CircularProgressIndicator(color: Color(0xFFFF4D97)),
+                              child: CircularProgressIndicator(
+                                color: Color(0xFFFF4D97),
+                              ),
                             )
                           : Stack(
                               fit: StackFit.expand,
@@ -882,8 +726,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
                                     painter: FaceGuidePainter(),
                                   ),
                                 if (_busy)
-                                  const Align(
-                                    alignment: Alignment.center,
+                                  const Center(
                                     child: CircularProgressIndicator(
                                       color: Color(0xFFFF4D97),
                                     ),
@@ -895,6 +738,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
                 ),
               ),
             ),
+
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: LookPicker(
@@ -902,6 +746,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
                 onChanged: (v) => setState(() => _selectedLook = v),
               ),
             ),
+
             if (showPreview)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -919,8 +764,9 @@ class _FaceScanPageState extends State<FaceScanPage> {
                               height: _capturedUiImage!.height.toDouble(),
                               child: Builder(
                                 builder: (context) {
-                                  final bool isDebug =
-                                      _selectedLook == MakeupLookPreset.debugPainterTest;
+                                  final bool isDebug = false;
+
+                                  // ✅ FIXED: Using eyelinerStyleFromPreset instead of configFromPreset
                                   return CustomPaint(
                                     painter: MakeupOverlayPainter(
                                       image: _capturedUiImage!,
@@ -933,9 +779,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
                                       preset: _selectedLook,
                                       debugMode: isDebug,
                                       isLiveMode: false,
-                                      eyelinerStyle: LookEngine
-                                          .configFromPreset(_selectedLook, profile: _faceProfile)
-                                          .eyelinerStyle,
+                                      eyelinerStyle: LookEngine.eyelinerStyleFromPreset(_selectedLook),
                                       skinColor: Color.fromARGB(
                                         255,
                                         _faceProfile!.avgR,
@@ -954,26 +798,26 @@ class _FaceScanPageState extends State<FaceScanPage> {
                         ),
                       ),
                     ),
+
                     if (showSlider)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Row(
-                          children: [
-                            const Text('Opacity', style: TextStyle(fontSize: 12)),
-                            Expanded(
-                              child: Slider(
-                                value: _intensity,
-                                min: 0.0,
-                                max: 1.0,
-                                divisions: 20,
-                                label: '${(_intensity * 100).round()}%',
-                                onChanged: (v) => setState(() => _intensity = v),
-                              ),
+                      Row(
+                        children: [
+                          const Text('Opacity', style: TextStyle(fontSize: 12)),
+                          Expanded(
+                            child: Slider(
+                              value: _intensity,
+                              min: 0.0,
+                              max: 1.0,
+                              divisions: 20,
+                              label: '${(_intensity * 100).round()}%',
+                              onChanged: (v) => setState(() => _intensity = v),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
+
                     const SizedBox(height: 8),
+
                     Row(
                       children: [
                         Expanded(
@@ -991,7 +835,9 @@ class _FaceScanPageState extends State<FaceScanPage> {
                             ),
                           ),
                         ),
+
                         const SizedBox(width: 8),
+
                         Expanded(
                           child: SizedBox(
                             height: 40,
@@ -1016,13 +862,6 @@ class _FaceScanPageState extends State<FaceScanPage> {
                                 'View Result Screen',
                                 style: TextStyle(fontSize: 12),
                               ),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFFFF4D97),
-                                side: const BorderSide(
-                                  color: Color(0xFFFF4D97),
-                                  width: 2,
-                                ),
-                              ),
                             ),
                           ),
                         ),
@@ -1040,6 +879,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
                   textAlign: TextAlign.center,
                 ),
               ),
+
             if (_capturedUiImage == null)
               Padding(
                 padding: const EdgeInsets.all(12),
@@ -1058,7 +898,10 @@ class _FaceScanPageState extends State<FaceScanPage> {
                     icon: const Icon(Icons.camera_alt, size: 24),
                     label: const Text(
                       'Scan Face',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
@@ -1089,67 +932,6 @@ class FaceGuidePainter extends CustomPainter {
       final y = center.dy + radius * sin(radian);
       canvas.drawCircle(Offset(x, y), dotRadius, paint);
     }
-  }
-
-  @override
-  bool shouldRepaint(CustomPainter oldDelegate) => false;
-}
-
-class CameraFramePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFFF4D97).withOpacity(0.8)
-      ..strokeWidth = 4
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    const cornerLength = 40.0;
-    const margin = 20.0;
-
-    canvas.drawLine(
-      const Offset(margin, margin),
-      const Offset(margin + cornerLength, margin),
-      paint,
-    );
-    canvas.drawLine(
-      const Offset(margin, margin),
-      const Offset(margin, margin + cornerLength),
-      paint,
-    );
-
-    canvas.drawLine(
-      Offset(size.width - margin, margin),
-      Offset(size.width - margin - cornerLength, margin),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(size.width - margin, margin),
-      Offset(size.width - margin, margin + cornerLength),
-      paint,
-    );
-
-    canvas.drawLine(
-      Offset(margin, size.height - margin),
-      Offset(margin + cornerLength, size.height - margin),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(margin, size.height - margin),
-      Offset(margin, size.height - margin - cornerLength),
-      paint,
-    );
-
-    canvas.drawLine(
-      Offset(size.width - margin, size.height - margin),
-      Offset(size.width - margin - cornerLength, size.height - margin),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(size.width - margin, size.height - margin),
-      Offset(size.width - margin, size.height - margin - cornerLength),
-      paint,
-    );
   }
 
   @override

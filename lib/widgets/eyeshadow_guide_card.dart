@@ -1,18 +1,39 @@
-import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
+import '../painters/eyeshadow_guide_painter.dart';  // ✅ IMPORT PALETTE FROM HERE
+import '../config/makeup_look_config.dart';
+import '../look_engine.dart';  // For LookResult if needed
+
+// ✅ FIXED: EyeshadowGuideCard with correct parameters
 class EyeshadowGuideCard extends StatelessWidget {
-  final String imagePath;
+  final Face face;
+  final MakeupLookConfig config;
+  final ui.Image image;
 
   const EyeshadowGuideCard({
     super.key,
-    required this.imagePath,
+    required this.face,
+    required this.config,
+    required this.image,
   });
 
   @override
   Widget build(BuildContext context) {
     const guidePink = Color(0xFFFF4D97);
     const softBg = Color(0xFFFFF7FA);
+    
+    // ✅ FIX 3: Generate colors manually (not from config)
+    // Using Soft Glam colors as default since this is a guide card
+    const baseColor = Color(0xFFBFA6A0); // Soft Glam eyeshadow color
+    
+    final palette = EyeshadowGuidePalette(
+      lidColor: baseColor.withOpacity(0.7),
+      creaseColor: baseColor.withOpacity(0.5),
+      outerColor: baseColor.withOpacity(0.9),
+      guideColor: guidePink,
+    );
 
     return Container(
       width: double.infinity,
@@ -42,12 +63,25 @@ class EyeshadowGuideCard extends StatelessWidget {
           const SizedBox(height: 14),
           ClipRRect(
             borderRadius: BorderRadius.circular(18),
-            child: Image.file(
-              File(imagePath),
+            child: SizedBox(
               width: double.infinity,
               height: 230,
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  RawImage(
+                    image: image,
+                    fit: BoxFit.cover,
+                  ),
+                  CustomPaint(
+                    painter: EyeshadowGuidePainter(
+                      face: face,
+                      config: config,
+                      palette: palette,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),

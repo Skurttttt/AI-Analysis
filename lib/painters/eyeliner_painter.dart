@@ -313,8 +313,10 @@ class EyelinerPainter {
   /// ✅ KEEP your eyeliner rendering EXACTLY the same
   void paint(Canvas canvas, Size size) {
     final k = intensity.clamp(0.0, 1.0);
-    if (k <= 0.0) return;
-
+    
+    // ✅ Early exit to avoid unnecessary work
+    if (k <= 0.01) return;
+    
     if (style == EyelinerStyle.none) return;
 
     // Ensure paths exist even if caller didn't call buildPaths()

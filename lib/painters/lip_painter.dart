@@ -20,7 +20,7 @@ class LipPainter {
 
   void paint(Canvas canvas, Size size) {
     final k = intensity.clamp(0.0, 1.0);
-    if (k <= 0.0) return;
+    if (k <= 0.001) return;
 
     // ML Kit lip contours
     final upper = face.contours[FaceContourType.upperLipTop]?.points;
@@ -80,7 +80,8 @@ class LipPainter {
     );
 
     // Layer so blending looks like it sits on lips (not sticker)
-    final layerBounds = bounds.inflate(max(lipW, lipH) * 0.6);
+    // Keep the offscreen layer tight. Large saveLayer bounds are expensive on GPU.
+    final layerBounds = bounds.inflate(max(10.0, max(lipW, lipH) * 0.35));
     canvas.saveLayer(layerBounds, Paint());
 
     // PASS 1: pigment (visible)

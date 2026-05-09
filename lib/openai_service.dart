@@ -189,6 +189,18 @@ NON-NEGOTIABLE:
 - If lookName is Bronzed Goddess, warm bronzed cheek color / contour is allowed
 - If lookName is Bold Editorial, blush can be structured, angular, and high-contrast
 
+CRITICAL:
+- Every step MUST include:
+  - stepNumber
+  - title
+  - instruction
+  - whyThisColorSuitsYou
+  - targetArea
+
+- DO NOT skip "whyThisColorSuitsYou"
+- DO NOT leave any field empty
+- If any field is missing, the response is INVALID
+
 PERSONALIZATION:
 - Tailor each instruction based on:
   - lookName
@@ -328,10 +340,23 @@ Return ONLY JSON. No extra text.
       return fallback;
     }
 
-    return _normalizeSteps(
+    // ✅ FIX 1 — REQUIRE FULL VALID STEPS
+    final steps = _normalizeSteps(
       rawSteps: rawSteps,
       fallback: fallback,
     );
+
+    // 🚨 NEW VALIDATION
+    final isValid = steps.every((step) =>
+        (step['instruction']?.toString().trim().isNotEmpty ?? false) &&
+        (step['whyThisColorSuitsYou']?.toString().trim().isNotEmpty ?? false));
+
+    if (!isValid) {
+      debugPrint('AI response incomplete → using FULL fallback');
+      return fallback;
+    }
+
+    return steps;
   }
 
   List<Map<String, dynamic>> _normalizeSteps({

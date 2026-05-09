@@ -10,6 +10,42 @@ import 'look_engine.dart';
 import 'painters/makeup_overlay_painter.dart';
 import 'skin_analyzer.dart';
 
+class _MakeupPreviewValues {
+  final double globalIntensity;
+  final double lipOpacity;
+  final double blushOpacity;
+  final double eyeOpacity;
+  final double linerOpacity;
+  final double browOpacity;
+
+  const _MakeupPreviewValues({
+    required this.globalIntensity,
+    required this.lipOpacity,
+    required this.blushOpacity,
+    required this.eyeOpacity,
+    required this.linerOpacity,
+    required this.browOpacity,
+  });
+
+  _MakeupPreviewValues copyWith({
+    double? globalIntensity,
+    double? lipOpacity,
+    double? blushOpacity,
+    double? eyeOpacity,
+    double? linerOpacity,
+    double? browOpacity,
+  }) {
+    return _MakeupPreviewValues(
+      globalIntensity: globalIntensity ?? this.globalIntensity,
+      lipOpacity: lipOpacity ?? this.lipOpacity,
+      blushOpacity: blushOpacity ?? this.blushOpacity,
+      eyeOpacity: eyeOpacity ?? this.eyeOpacity,
+      linerOpacity: linerOpacity ?? this.linerOpacity,
+      browOpacity: browOpacity ?? this.browOpacity,
+    );
+  }
+}
+
 class ScanResultPage extends StatefulWidget {
   final String? scannedImagePath;
   final String? scannedItem;
@@ -36,8 +72,26 @@ class _ScanResultPageState extends State<ScanResultPage> {
   ui.Image? _uiImage;
   Face? _previewFace;
 
+  // UI slider thumb values. These update while dragging.
   final ValueNotifier<double> _sliderValue = ValueNotifier<double>(0.75);
-  final ValueNotifier<double> _appliedIntensity = ValueNotifier<double>(0.75);
+  final ValueNotifier<double> _lipOpacity = ValueNotifier<double>(1.0);
+  final ValueNotifier<double> _blushOpacity = ValueNotifier<double>(1.0);
+  final ValueNotifier<double> _eyeOpacity = ValueNotifier<double>(1.0);
+  final ValueNotifier<double> _linerOpacity = ValueNotifier<double>(1.0);
+  final ValueNotifier<double> _browOpacity = ValueNotifier<double>(1.0);
+
+  // Heavy preview values. This is the only notifier that repaints CustomPaint.
+  final ValueNotifier<_MakeupPreviewValues> _previewValues =
+      ValueNotifier<_MakeupPreviewValues>(
+    const _MakeupPreviewValues(
+      globalIntensity: 0.75,
+      lipOpacity: 1.0,
+      blushOpacity: 1.0,
+      eyeOpacity: 1.0,
+      linerOpacity: 1.0,
+      browOpacity: 1.0,
+    ),
+  );
 
   late final MakeupLookPreset _currentPreset;
 
@@ -54,8 +108,31 @@ class _ScanResultPageState extends State<ScanResultPage> {
   @override
   void dispose() {
     _sliderValue.dispose();
-    _appliedIntensity.dispose();
+    _lipOpacity.dispose();
+    _blushOpacity.dispose();
+    _eyeOpacity.dispose();
+    _linerOpacity.dispose();
+    _browOpacity.dispose();
+    _previewValues.dispose();
     super.dispose();
+  }
+
+  void _applyPreviewValues({
+    double? globalIntensity,
+    double? lipOpacity,
+    double? blushOpacity,
+    double? eyeOpacity,
+    double? linerOpacity,
+    double? browOpacity,
+  }) {
+    _previewValues.value = _previewValues.value.copyWith(
+      globalIntensity: globalIntensity,
+      lipOpacity: lipOpacity,
+      blushOpacity: blushOpacity,
+      eyeOpacity: eyeOpacity,
+      linerOpacity: linerOpacity,
+      browOpacity: browOpacity,
+    );
   }
 
   Future<void> _loadPreviewAndDetect() async {
@@ -174,10 +251,11 @@ class _ScanResultPageState extends State<ScanResultPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if (_uiImage != null && widget.look != null)
+                  if (_uiImage != null && widget.look != null) ...[
+                    // Global opacity slider
                     Row(
                       children: [
-                        const Text('Opacity', style: TextStyle(fontSize: 12)),
+                        const Text('Global Opacity', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                         Expanded(
                           child: ValueListenableBuilder<double>(
                             valueListenable: _sliderValue,
@@ -192,7 +270,7 @@ class _ScanResultPageState extends State<ScanResultPage> {
                                   _sliderValue.value = newV;
                                 },
                                 onChangeEnd: (endV) {
-                                  _appliedIntensity.value = endV;
+                                  _applyPreviewValues(globalIntensity: endV);
                                 },
                               );
                             },
@@ -200,8 +278,25 @@ class _ScanResultPageState extends State<ScanResultPage> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 16),
+                    // Individual layer opacity sliders
+                    const Text(
+                      'Layer Opacities',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildSlider('💄 Lips', _lipOpacity, onApply: (v) => _applyPreviewValues(lipOpacity: v)),
+                    _buildSlider('🌸 Blush', _blushOpacity, onApply: (v) => _applyPreviewValues(blushOpacity: v)),
+                    _buildSlider('👁️ Eyeshadow', _eyeOpacity, onApply: (v) => _applyPreviewValues(eyeOpacity: v)),
+                    _buildSlider('✏️ Eyeliner', _linerOpacity, onApply: (v) => _applyPreviewValues(linerOpacity: v)),
+                    _buildSlider('✍️ Brows', _browOpacity, onApply: (v) => _applyPreviewValues(browOpacity: v)),
+                  ],
                   if (widget.scannedItem != null) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 20),
                     Text(
                       'Recommended Products for ${widget.scannedItem}',
                       style: const TextStyle(
@@ -221,6 +316,54 @@ class _ScanResultPageState extends State<ScanResultPage> {
           _buildBottomButtons(),
         ],
       ),
+    );
+  }
+
+  Widget _buildSlider(
+    String label,
+    ValueNotifier<double> notifier, {
+    required ValueChanged<double> onApply,
+  }) {
+    return ValueListenableBuilder<double>(
+      valueListenable: notifier,
+      builder: (context, value, _) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 80,
+                child: Text(
+                  label,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              Expanded(
+                child: Slider(
+                  value: value,
+                  min: 0,
+                  max: 1,
+                  divisions: 10,
+                  label: '${(value * 100).round()}%',
+                  onChanged: (v) => notifier.value = v,
+                  onChangeEnd: onApply,
+                ),
+              ),
+              SizedBox(
+                width: 40,
+                child: Text(
+                  '${(value * 100).round()}%',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFFFF4D97),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -254,44 +397,64 @@ class _ScanResultPageState extends State<ScanResultPage> {
                       width: _uiImage!.width.toDouble(),
                       height: _uiImage!.height.toDouble(),
                       child: RepaintBoundary(
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: _appliedIntensity,
-                          builder: (context, intensityValue, _) {
-                            return CustomPaint(
-                              painter: MakeupOverlayPainter(
-                                image: _uiImage!,
-                                face: faceForOverlay!,
-                                lipstickColor: widget.look!.lipstickColor,
-                                blushColor: widget.look!.blushColor,
-                                eyeshadowColor: widget.look!.eyeshadowColor,
-                                intensity: intensityValue,
-                                faceShape:
-                                    widget.faceProfile?.faceShape ??
-                                        FaceShape.oval,
-                                preset: _currentPreset,
-                                debugMode: false,
-                                isLiveMode: false,
-                                eyelinerStyle: LookEngine.configFromPreset(
-                                  _currentPreset,
-                                  profile: widget.faceProfile,
-                                ).eyelinerStyle,
-                                skinColor: widget.faceProfile != null
-                                    ? Color.fromARGB(
-                                        255,
-                                        widget.faceProfile!.avgR,
-                                        widget.faceProfile!.avgG,
-                                        widget.faceProfile!.avgB,
-                                      )
-                                    : Colors.transparent,
-                                sceneLuminance: 0.5,
-                                leftCheekLuminance: 0.5,
-                                rightCheekLuminance: 0.5,
-                                profile: widget.faceProfile,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            RepaintBoundary(
+                              child: RawImage(
+                                image: _uiImage,
+                                fit: BoxFit.fill,
                               ),
-                            );
-                          },
+                            ),
+                            RepaintBoundary(
+                              child: ValueListenableBuilder<_MakeupPreviewValues>(
+                                valueListenable: _previewValues,
+                                builder: (context, values, _) {
+                                  final eyelinerStyle =
+                                      LookEngine.eyelinerStyleFromPreset(
+                                    _currentPreset,
+                                  );
+
+                                  return CustomPaint(
+                                    painter: MakeupOverlayPainter(
+                                      face: faceForOverlay!,
+                                      lipstickColor: widget.look!.lipstickColor,
+                                      blushColor: widget.look!.blushColor,
+                                      eyeshadowColor: widget.look!.eyeshadowColor,
+                                      intensity: values.globalIntensity,
+                                      faceShape: widget.faceProfile?.faceShape ??
+                                          FaceShape.oval,
+                                      preset: _currentPreset,
+                                      debugMode: false,
+                                      isLiveMode: false,
+                                      eyelinerStyle: eyelinerStyle,
+                                      lipstickOpacity: values.lipOpacity,
+                                      blushOpacity: values.blushOpacity,
+                                      eyeshadowOpacity: values.eyeOpacity,
+                                      eyelinerOpacity: values.linerOpacity,
+                                      browOpacity: values.browOpacity,
+                                      skinColor: widget.faceProfile != null
+                                          ? Color.fromARGB(
+                                              255,
+                                              widget.faceProfile!.avgR,
+                                              widget.faceProfile!.avgG,
+                                              widget.faceProfile!.avgB,
+                                            )
+                                          : Colors.transparent,
+                                      sceneLuminance: 0.5,
+                                      leftCheekLuminance: 0.5,
+                                      rightCheekLuminance: 0.5,
+                                      profile: widget.faceProfile,
+                                    ),
+                                    isComplex: true,
+                                    willChange: true,
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
+                      )
                     ),
                   ),
                 )

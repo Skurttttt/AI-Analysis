@@ -63,22 +63,6 @@ class BlushPainter {
     final k = (k0 * lookStrength * autoBoost * darkKBoost * brightKCut * visBoost)
         .clamp(0.0, 1.0);
 
-    // ✅ Console debug only (NO visual overlays)
-    if (debugMode) {
-      debugPrint('🎨 BlushPainter:');
-      debugPrint('  • Base intensity: $k0');
-      debugPrint('  • Look strength: $lookStrength');
-      debugPrint('  • Auto boost: $autoBoost');
-      debugPrint('  • Dark boost: $darkKBoost');
-      debugPrint('  • Bright cut: $brightKCut');
-      debugPrint('  • Visibility boost: $visBoost');
-      debugPrint('  • Final k: $k');
-      debugPrint('  • Look style: $lookStyle');
-      debugPrint('  • Scene luminance: $sceneLuminance');
-      debugPrint('  • Left cheek lum: ${leftCheekLuminance ?? "null"}');
-      debugPrint('  • Right cheek lum: ${rightCheekLuminance ?? "null"}');
-    }
-
     // Get cheek centers using contour-based placement
     final leftCenter = _getCheekCenter(true, box, fw, fh);
     final rightCenter = _getCheekCenter(false, box, fw, fh);

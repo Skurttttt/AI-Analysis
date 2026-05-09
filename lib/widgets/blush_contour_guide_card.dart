@@ -2,18 +2,18 @@ import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
+import '../config/makeup_look_config.dart';
 import '../painters/blush_contour_guide_painter.dart';
-import '../look_engine.dart';
 
 class BlushContourGuideCard extends StatelessWidget {
   final Face face;
-  final MakeupLookPreset preset;
+  final MakeupLookConfig config;
   final ui.Image image;
 
   const BlushContourGuideCard({
     super.key,
     required this.face,
-    required this.preset,
+    required this.config,
     required this.image,
   });
 
@@ -64,7 +64,7 @@ class BlushContourGuideCard extends StatelessWidget {
                   CustomPaint(
                     painter: BlushContourGuidePainter(
                       face: face,
-                      preset: preset,
+                      config: config,
                       imageSize: Size(
                         image.width.toDouble(),
                         image.height.toDouble(),

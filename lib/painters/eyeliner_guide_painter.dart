@@ -2,16 +2,16 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
-import '../look_engine.dart';
+import '../config/makeup_look_config.dart';
 
 class EyelinerGuidePainter extends CustomPainter {
   final Face face;
-  final MakeupLookPreset preset;
+  final MakeupLookConfig config;
   final Color guideColor;
 
   const EyelinerGuidePainter({
     required this.face,
-    required this.preset,
+    required this.config,
     this.guideColor = const Color(0xFFFF4D97),
   });
 
@@ -39,56 +39,6 @@ class EyelinerGuidePainter extends CustomPainter {
         .toList(growable: false);
   }
 
-  _EyelinerStyle _styleForPreset(MakeupLookPreset preset) {
-    switch (preset) {
-      case MakeupLookPreset.softGlam:
-        return const _EyelinerStyle(
-          wingLength: 0.34,
-          wingLift: 0.52,
-          lineThickness: 2.0,
-          startInset: 0.20,
-          angleGuideOpacity: 0.25,
-        );
-
-      case MakeupLookPreset.emo:
-        return const _EyelinerStyle(
-          wingLength: 0.48,
-          wingLift: 0.40,
-          lineThickness: 2.8,
-          startInset: 0.06,
-          angleGuideOpacity: 0.36,
-        );
-
-      case MakeupLookPreset.dollKBeauty:
-        return const _EyelinerStyle(
-          wingLength: 0.22,
-          wingLift: 0.20,
-          lineThickness: 1.7,
-          startInset: 0.30,
-          angleGuideOpacity: 0.18,
-        );
-
-      case MakeupLookPreset.bronzedGoddess:
-        return const _EyelinerStyle(
-          wingLength: 0.38,
-          wingLift: 0.48,
-          lineThickness: 2.2,
-          startInset: 0.14,
-          angleGuideOpacity: 0.28,
-        );
-
-      case MakeupLookPreset.boldEditorial:
-      case MakeupLookPreset.debugPainterTest:
-        return const _EyelinerStyle(
-          wingLength: 0.58,
-          wingLift: 0.64,
-          lineThickness: 3.0,
-          startInset: 0.04,
-          angleGuideOpacity: 0.38,
-        );
-    }
-  }
-
   void _drawEyeLiner(
     Canvas canvas,
     List<Offset> eyePoints, {
@@ -100,7 +50,8 @@ class EyelinerGuidePainter extends CustomPainter {
     final eyeBounds = _boundsOf(points);
     final eyeW = max(eyeBounds.width, 1.0);
     final eyeH = max(eyeBounds.height, 8.0);
-    final style = _styleForPreset(preset);
+    
+    final style = config.eyeliner;
 
     final innerX = isLeftEye ? eyeBounds.right : eyeBounds.left;
     final outerX = isLeftEye ? eyeBounds.left : eyeBounds.right;
@@ -164,7 +115,7 @@ class EyelinerGuidePainter extends CustomPainter {
     final glowPaint = Paint()
       ..color = guideColor.withOpacity(0.12)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = style.lineThickness + 4
+      ..strokeWidth = style.thickness + 4
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true;
@@ -172,7 +123,7 @@ class EyelinerGuidePainter extends CustomPainter {
     final lashPaint = Paint()
       ..color = guideColor.withOpacity(0.82)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = style.lineThickness
+      ..strokeWidth = style.thickness
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true;
@@ -180,7 +131,7 @@ class EyelinerGuidePainter extends CustomPainter {
     final outerEdgePaint = Paint()
       ..color = guideColor.withOpacity(0.98)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = style.lineThickness + 0.45
+      ..strokeWidth = style.thickness + 0.45
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true;
@@ -224,7 +175,7 @@ class EyelinerGuidePainter extends CustomPainter {
       direction: direction,
       eyeW: eyeW,
       eyeH: eyeH,
-      thickness: style.lineThickness,
+      thickness: style.thickness,
     );
 
     _drawSmallStepLabel(
@@ -399,23 +350,7 @@ class EyelinerGuidePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant EyelinerGuidePainter oldDelegate) {
     return oldDelegate.face != face ||
-        oldDelegate.preset != preset ||
+        oldDelegate.config != config ||
         oldDelegate.guideColor != guideColor;
   }
-}
-
-class _EyelinerStyle {
-  final double wingLength;
-  final double wingLift;
-  final double lineThickness;
-  final double startInset;
-  final double angleGuideOpacity;
-
-  const _EyelinerStyle({
-    required this.wingLength,
-    required this.wingLift,
-    required this.lineThickness,
-    required this.startInset,
-    required this.angleGuideOpacity,
-  });
 }

@@ -1,12 +1,21 @@
-import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
+import '../painters/eyeliner_guide_painter.dart';
+import '../config/makeup_look_config.dart';  // ✅ CORRECT IMPORT
+
+// ✅ FIXED: EyelinerGuideCard with correct parameters
 class EyelinerGuideCard extends StatelessWidget {
-  final String imagePath;
+  final Face face;
+  final MakeupLookConfig config;  // ✅ FIXED: Changed from MakeupConfig to MakeupLookConfig
+  final ui.Image image;
 
   const EyelinerGuideCard({
     super.key,
-    required this.imagePath,
+    required this.face,
+    required this.config,
+    required this.image,
   });
 
   @override
@@ -42,12 +51,25 @@ class EyelinerGuideCard extends StatelessWidget {
           const SizedBox(height: 14),
           ClipRRect(
             borderRadius: BorderRadius.circular(18),
-            child: Image.file(
-              File(imagePath),
+            child: SizedBox(
               width: double.infinity,
               height: 230,
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  RawImage(
+                    image: image,
+                    fit: BoxFit.cover,
+                  ),
+                  CustomPaint(
+                    painter: EyelinerGuidePainter(
+                      face: face,
+                      config: config,
+                      guideColor: guidePink,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),

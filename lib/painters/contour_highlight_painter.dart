@@ -24,7 +24,7 @@ class ContourHighlightPainter {
 
   void paint(Canvas canvas, Size size) {
     final k = intensity.clamp(0.0, 1.0);
-    if (k <= 0) return;
+    if (k <= 0.001) return;
 
     final box = face.boundingBox;
 

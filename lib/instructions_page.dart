@@ -1,26 +1,28 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'dart:math';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
 import 'look_engine.dart';
+import 'config/makeup_look_config.dart' as guide_config;
+import 'config/makeup_look_configs.dart';
 import 'openai_service.dart';
-import 'skin_analyzer.dart';
-import 'painters/lip_guide_painter.dart';
-import 'painters/eyebrow_guide_painter.dart';
 import 'painters/base_prep_guide_painter.dart';
+import 'painters/eyebrow_guide_painter.dart';
+import 'painters/lip_guide_painter.dart';
 import 'painters/eyeshadow_guide_painter.dart';
 import 'painters/eyeliner_guide_painter.dart';
-import 'widgets/lip_guide_card.dart';
-import 'widgets/eyebrow_guide_card.dart';
-import 'widgets/base_prep_guide_card.dart';
+
+// Widgets
 import 'widgets/eyeshadow_guide_card.dart';
 import 'widgets/eyeliner_guide_card.dart';
 import 'widgets/blush_contour_guide_card.dart';
 import 'widgets/final_look_guide_card.dart';
+import 'widgets/base_prep_guide_card.dart';
+import 'widgets/eyebrow_guide_card.dart';
+import 'widgets/lip_guide_card.dart';
 
 class InstructionsPage extends StatefulWidget {
   final LookResult look;
@@ -35,7 +37,7 @@ class InstructionsPage extends StatefulWidget {
     this.faceProfile,
     this.scannedImagePath,
     this.detectedFace,
-    this.selectedPreset = MakeupLookPreset.softGlam,
+    required this.selectedPreset,
   });
 
   @override
@@ -43,24 +45,37 @@ class InstructionsPage extends StatefulWidget {
 }
 
 class _InstructionsPageState extends State<InstructionsPage> {
-  bool _loadingAI = false;
-  List<Map<String, dynamic>> _aiSteps = [];
-  String? _aiError;
-  String? _lipGuideImagePath;
-  bool _generatingLipGuide = false;
-  String? _eyebrowGuideImagePath;
-  bool _generatingEyebrowGuide = false;
-  String? _basePrepGuideImagePath;
-  bool _generatingBasePrepGuide = false;
-  String? _eyeshadowGuideImagePath;
-  bool _generatingEyeshadowGuide = false;
-  String? _eyelinerGuideImagePath;
-  bool _generatingEyelinerGuide = false;
+  late final guide_config.MakeupLookConfig _config;
 
-  final _openAI = OpenAIService();
+  // AI-related state
+  bool _loadingAI = false;
+  String? _aiError;
+  List<Map<String, dynamic>> _aiSteps = [];
+  int _currentPage = 0;
   final PageController _pageController = PageController();
 
-  int _currentPage = 0;
+  // Guide generation state
+  bool _generatingBasePrepGuide = false;
+  bool _generatingEyebrowGuide = false;
+  bool _generatingEyeshadowGuide = false;
+  bool _generatingEyelinerGuide = false;
+  bool _generatingLipGuide = false;
+  
+  String? _basePrepGuideImagePath;
+  String? _eyebrowGuideImagePath;
+  String? _eyeshadowGuideImagePath;
+  String? _eyelinerGuideImagePath;
+  String? _lipGuideImagePath;
+
+  @override
+  void initState() {
+    super.initState();
+    _config = MakeupLookConfigs.get(widget.selectedPreset);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _generateAIInstructions();
+    });
+  }
 
   @override
   void dispose() {
@@ -68,341 +83,110 @@ class _InstructionsPageState extends State<InstructionsPage> {
     super.dispose();
   }
 
-  Future<ui.Image> _loadUiImageFromFile(String path) async {
-    final bytes = await File(path).readAsBytes();
-    final codec = await ui.instantiateImageCodec(bytes, targetWidth: 720);
-    final frame = await codec.getNextFrame();
-    return frame.image;
-  }
+  // ✅ FIXED: Actual OpenAI API call instead of mock data
+  Future<void> _generateAIInstructions() async {
+    debugPrint('🔥 AI TRIGGERED');
 
-  Rect? _computeLipCropRect(Face face, ui.Image image) {
-    final upperTop = face.contours[FaceContourType.upperLipTop]?.points;
-    final upperBottom = face.contours[FaceContourType.upperLipBottom]?.points;
-    final lowerTop = face.contours[FaceContourType.lowerLipTop]?.points;
-    final lowerBottom = face.contours[FaceContourType.lowerLipBottom]?.points;
+    setState(() {
+      _loadingAI = true;
+      _aiError = null;
+    });
 
-    final all = <Point<int>>[
-      ...?upperTop,
-      ...?upperBottom,
-      ...?lowerTop,
-      ...?lowerBottom,
-    ];
+    try {
+      final steps = await OpenAIService().generateMakeupInstructions(
+        lookName: widget.look.lookName,
+        skinTone: widget.faceProfile?.skinTone.name,
+        undertone: widget.faceProfile?.undertone.name,
+        faceShape: widget.faceProfile?.faceShape.name,
+      );
 
-    if (all.length < 8) return null;
+      debugPrint('🔥 AI STEPS RECEIVED: ${steps.length}');
 
-    double minX = all.first.x.toDouble();
-    double maxX = all.first.x.toDouble();
-    double minY = all.first.y.toDouble();
-    double maxY = all.first.y.toDouble();
+      setState(() {
+        _aiSteps = steps;
+      });
+      
+      // ✅ Trigger Step 1 guide after AI loads
+      _ensureGuideForTargetArea('full_face');
+    } catch (e) {
+      debugPrint('❌ AI ERROR: $e');
 
-    for (final p in all.skip(1)) {
-      final x = p.x.toDouble();
-      final y = p.y.toDouble();
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
+      setState(() {
+        _aiError = e.toString();
+      });
+    } finally {
+      setState(() {
+        _loadingAI = false;
+      });
     }
-
-    final lipW = maxX - minX;
-    final lipH = maxY - minY;
-
-    final rect = Rect.fromLTRB(
-      minX - lipW * 1.15,
-      minY - lipH * 2.2,
-      maxX + lipW * 1.15,
-      maxY + lipH * 2.0,
-    );
-
-    return rect.intersect(
-      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-    );
   }
 
-  Rect? _computeEyebrowCropRect(Face face, ui.Image image) {
-    final leftTop = face.contours[FaceContourType.leftEyebrowTop]?.points;
-    final leftBottom = face.contours[FaceContourType.leftEyebrowBottom]?.points;
-    final rightTop = face.contours[FaceContourType.rightEyebrowTop]?.points;
-    final rightBottom = face.contours[FaceContourType.rightEyebrowBottom]?.points;
-
-    final all = <Point<int>>[
-      ...?leftTop,
-      ...?leftBottom,
-      ...?rightTop,
-      ...?rightBottom,
-    ];
-
-    if (all.length < 8) return null;
-
-    double minX = all.first.x.toDouble();
-    double maxX = all.first.x.toDouble();
-    double minY = all.first.y.toDouble();
-    double maxY = all.first.y.toDouble();
-
-    for (final p in all.skip(1)) {
-      final x = p.x.toDouble();
-      final y = p.y.toDouble();
-      minX = min(minX, x);
-      maxX = max(maxX, x);
-      minY = min(minY, y);
-      maxY = max(maxY, y);
+  void _goToNextPage() {
+    if (_currentPage < 6) {
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
     }
-
-    final browW = maxX - minX;
-    final browH = maxY - minY;
-
-    final rect = Rect.fromLTRB(
-      minX - browW * 0.42,
-      minY - browH * 4.2,
-      maxX + browW * 0.42,
-      maxY + browH * 6.0,
-    );
-
-    return rect.intersect(
-      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-    );
   }
 
-  Rect? _computeBasePrepCropRect(Face face, ui.Image image) {
-    final box = face.boundingBox;
-
-    if (box.width <= 0 || box.height <= 0) return null;
-
-    final rect = Rect.fromLTRB(
-      box.left - box.width * 0.20,
-      box.top - box.height * 0.18,
-      box.right + box.width * 0.20,
-      box.bottom + box.height * 0.10,
-    );
-
-    return rect.intersect(
-      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-    );
-  }
-
-  Rect? _computeEyeCropRect(Face face, ui.Image image) {
-    final leftEye = face.contours[FaceContourType.leftEye]?.points;
-    final rightEye = face.contours[FaceContourType.rightEye]?.points;
-    final leftBrow = face.contours[FaceContourType.leftEyebrowTop]?.points;
-    final rightBrow = face.contours[FaceContourType.rightEyebrowTop]?.points;
-
-    final all = <Point<int>>[
-      ...?leftEye,
-      ...?rightEye,
-      ...?leftBrow,
-      ...?rightBrow,
-    ];
-
-    if (all.length < 8) return null;
-
-    double minX = all.first.x.toDouble();
-    double maxX = all.first.x.toDouble();
-    double minY = all.first.y.toDouble();
-    double maxY = all.first.y.toDouble();
-
-    for (final p in all.skip(1)) {
-      final x = p.x.toDouble();
-      final y = p.y.toDouble();
-
-      minX = min(minX, x);
-      maxX = max(maxX, x);
-      minY = min(minY, y);
-      maxY = max(maxY, y);
-    }
-
-    final w = maxX - minX;
-    final h = maxY - minY;
-
-    final rect = Rect.fromLTRB(
-      minX - w * 0.35,
-      minY - h * 0.65,
-      maxX + w * 0.35,
-      maxY + h * 1.40,
-    );
-
-    return rect.intersect(
-      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-    );
-  }
-
-  Future<String> _saveCroppedImage({
-    required ui.Image source,
-    required Rect cropRect,
+  // ✅ Helper function to create guide images
+  Future<String> _createGuideImage({
     required String prefix,
+    required CustomPainter painter,
   }) async {
+    if (widget.scannedImagePath == null) {
+      throw Exception('No scanned image path found.');
+    }
+
+    final image = await _loadUiImageFromFile(widget.scannedImagePath!);
+
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    final dstW = cropRect.width.round();
-    final dstH = cropRect.height.round();
-
-    canvas.drawImageRect(
-      source,
-      cropRect,
-      Rect.fromLTWH(0, 0, dstW.toDouble(), dstH.toDouble()),
-      Paint(),
+    final size = Size(
+      image.width.toDouble(),
+      image.height.toDouble(),
     );
 
-    final picture = recorder.endRecording();
-    final cropped = await picture.toImage(dstW, dstH);
+    canvas.drawImage(image, Offset.zero, Paint());
+    painter.paint(canvas, size);
 
-    final byteData = await cropped.toByteData(format: ui.ImageByteFormat.png);
+    final picture = recorder.endRecording();
+    final guideImage = await picture.toImage(image.width, image.height);
+
+    final byteData = await guideImage.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+
     if (byteData == null) {
       throw Exception('Failed to encode guide image.');
     }
 
+    final Uint8List pngBytes = byteData.buffer.asUint8List();
+
     final dir = await Directory.systemTemp.createTemp(prefix);
     final file = File('${dir.path}/guide.png');
 
-    await file.writeAsBytes(byteData.buffer.asUint8List(), flush: true);
+    await file.writeAsBytes(pngBytes, flush: true);
+
     return file.path;
   }
 
-  Color _darken(Color color, double amount) {
-    final hsl = HSLColor.fromColor(color);
-    final darkened = hsl.withLightness(
-      (hsl.lightness - amount).clamp(0.0, 1.0),
-    );
-    return darkened.toColor();
-  }
-
-  Future<void> _ensureLipGuideGenerated() async {
-    if (_lipGuideImagePath != null || _generatingLipGuide) return;
-    if (widget.scannedImagePath == null || widget.detectedFace == null) return;
-
-    setState(() {
-      _generatingLipGuide = true;
-    });
-
-    try {
-      final image = await _loadUiImageFromFile(widget.scannedImagePath!);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-
-      final size = Size(
-        image.width.toDouble(),
-        image.height.toDouble(),
-      );
-
-      canvas.drawImage(image, Offset.zero, Paint());
-
-      LipGuidePainter(
-        face: widget.detectedFace!,
-        preset: widget.selectedPreset,
-        lipColor: widget.look.lipstickColor,
-      ).paint(canvas, size);
-
-      final picture = recorder.endRecording();
-      final fullGuide = await picture.toImage(image.width, image.height);
-
-      final cropRect = _computeLipCropRect(widget.detectedFace!, fullGuide);
-
-      if (cropRect == null) return;
-
-      final path = await _saveCroppedImage(
-        source: fullGuide,
-        cropRect: cropRect,
-        prefix: 'lip_guide_',
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _lipGuideImagePath = path;
-      });
-    } finally {
-      if (!mounted) return;
-
-      setState(() {
-        _generatingLipGuide = false;
-      });
-    }
-  }
-
-  Future<void> _ensureEyebrowGuideGenerated() async {
-    if (_eyebrowGuideImagePath != null || _generatingEyebrowGuide) return;
-    if (widget.scannedImagePath == null || widget.detectedFace == null) return;
-
-    setState(() {
-      _generatingEyebrowGuide = true;
-    });
-
-    try {
-      final image = await _loadUiImageFromFile(widget.scannedImagePath!);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-
-      final size = Size(image.width.toDouble(), image.height.toDouble());
-
-      canvas.drawImage(image, Offset.zero, Paint());
-
-      EyebrowGuidePainter(
-        face: widget.detectedFace!,
-        preset: widget.selectedPreset,
-        guideColor: const Color(0xFFFF4D97),
-      ).paint(canvas, size);
-
-      final picture = recorder.endRecording();
-      final fullGuide = await picture.toImage(image.width, image.height);
-
-      final cropRect = _computeEyebrowCropRect(widget.detectedFace!, fullGuide);
-      if (cropRect == null) return;
-
-      final path = await _saveCroppedImage(
-        source: fullGuide,
-        cropRect: cropRect,
-        prefix: 'eyebrow_guide_',
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _eyebrowGuideImagePath = path;
-      });
-    } finally {
-      if (!mounted) return;
-
-      setState(() {
-        _generatingEyebrowGuide = false;
-      });
-    }
-  }
-
+  // ✅ Updated guide generation functions
   Future<void> _ensureBasePrepGuideGenerated() async {
     if (_basePrepGuideImagePath != null || _generatingBasePrepGuide) return;
-    if (widget.scannedImagePath == null || widget.detectedFace == null) return;
+    if (widget.detectedFace == null || widget.scannedImagePath == null) return;
 
-    setState(() {
-      _generatingBasePrepGuide = true;
-    });
+    setState(() => _generatingBasePrepGuide = true);
 
     try {
-      final image = await _loadUiImageFromFile(widget.scannedImagePath!);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-
-      final size = Size(image.width.toDouble(), image.height.toDouble());
-
-      canvas.drawImage(image, Offset.zero, Paint());
-
-      BasePrepGuidePainter(
-        face: widget.detectedFace!,
-        guideColor: const Color(0xFFFF4D97),
-      ).paint(canvas, size);
-
-      final picture = recorder.endRecording();
-      final fullGuide = await picture.toImage(image.width, image.height);
-
-      final cropRect = _computeBasePrepCropRect(widget.detectedFace!, fullGuide);
-      if (cropRect == null) return;
-
-      final path = await _saveCroppedImage(
-        source: fullGuide,
-        cropRect: cropRect,
+      final path = await _createGuideImage(
         prefix: 'base_prep_guide_',
+        painter: BasePrepGuidePainter(
+          face: widget.detectedFace!,
+          guideColor: const Color(0xFFFF4D97),
+        ),
       );
 
       if (!mounted) return;
@@ -411,196 +195,188 @@ class _InstructionsPageState extends State<InstructionsPage> {
         _basePrepGuideImagePath = path;
       });
     } finally {
-      if (!mounted) return;
-
-      setState(() {
-        _generatingBasePrepGuide = false;
-      });
+      if (mounted) {
+        setState(() => _generatingBasePrepGuide = false);
+      }
     }
   }
 
-  Future<void> _ensureEyeshadowGuideGenerated() async {
-    if (_eyeshadowGuideImagePath != null || _generatingEyeshadowGuide) return;
-    if (widget.scannedImagePath == null || widget.detectedFace == null) return;
+  Future<void> _ensureEyebrowGuideGenerated() async {
+    if (_eyebrowGuideImagePath != null || _generatingEyebrowGuide) return;
+    if (widget.detectedFace == null || widget.scannedImagePath == null) return;
 
-    setState(() {
-      _generatingEyeshadowGuide = true;
-    });
+    setState(() => _generatingEyebrowGuide = true);
 
     try {
-      final image = await _loadUiImageFromFile(widget.scannedImagePath!);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-
-      final size = Size(image.width.toDouble(), image.height.toDouble());
-
-      canvas.drawImage(image, Offset.zero, Paint());
-
-      final baseColor = widget.look.eyeshadowColor;
-
-      EyeshadowGuidePainter(
-        face: widget.detectedFace!,
-        preset: widget.selectedPreset,
-        palette: EyeshadowGuidePalette(
-          lidColor: baseColor.withOpacity(0.95),
-          creaseColor: baseColor.withOpacity(0.85),
-          outerColor: _darken(baseColor, 0.28),
+      final path = await _createGuideImage(
+        prefix: 'eyebrow_guide_',
+        painter: EyebrowGuidePainter(
+          face: widget.detectedFace!,
+          preset: widget.selectedPreset,
           guideColor: const Color(0xFFFF4D97),
         ),
-      ).paint(canvas, size);
-
-      final picture = recorder.endRecording();
-      final fullGuide = await picture.toImage(image.width, image.height);
-
-      final cropRect = _computeEyeCropRect(widget.detectedFace!, fullGuide);
-      if (cropRect == null) return;
-
-      final path = await _saveCroppedImage(
-        source: fullGuide,
-        cropRect: cropRect,
-        prefix: 'eyeshadow_guide_',
       );
 
       if (!mounted) return;
 
       setState(() {
-        _eyeshadowGuideImagePath = path;
+        _eyebrowGuideImagePath = path;
       });
     } finally {
-      if (!mounted) return;
-
-      setState(() {
-        _generatingEyeshadowGuide = false;
-      });
+      if (mounted) {
+        setState(() => _generatingEyebrowGuide = false);
+      }
     }
   }
 
+  Future<void> _ensureLipGuideGenerated() async {
+    if (_lipGuideImagePath != null || _generatingLipGuide) return;
+    if (widget.detectedFace == null || widget.scannedImagePath == null) return;
+
+    setState(() => _generatingLipGuide = true);
+
+    try {
+      final path = await _createGuideImage(
+        prefix: 'lip_guide_',
+        painter: LipGuidePainter(
+          face: widget.detectedFace!,
+          preset: widget.selectedPreset,
+          lipColor: widget.look.lipstickColor,
+        ),
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _lipGuideImagePath = path;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _generatingLipGuide = false);
+      }
+    }
+  }
+
+  // ✅ FIXED: Real painter generation for eyeshadow guide
+  Future<void> _ensureEyeshadowGuideGenerated() async {
+    if (_eyeshadowGuideImagePath != null || _generatingEyeshadowGuide) return;
+    if (widget.detectedFace == null || widget.scannedImagePath == null) return;
+
+    setState(() => _generatingEyeshadowGuide = true);
+
+    try {
+      final path = await _createGuideImage(
+        prefix: 'eyeshadow_guide_',
+        painter: EyeshadowGuidePainter(
+          face: widget.detectedFace!,
+          config: _config,
+          palette: EyeshadowGuidePalette(
+            lidColor: widget.look.eyeshadowColor.withOpacity(0.95),
+            creaseColor: widget.look.eyeshadowColor.withOpacity(0.75),
+            outerColor: widget.look.eyeshadowColor.withOpacity(1.0),
+            guideColor: const Color(0xFFFF4D97),
+          ),
+        ),
+      );
+
+      if (!mounted) return;
+
+      setState(() => _eyeshadowGuideImagePath = path);
+    } finally {
+      if (mounted) {
+        setState(() => _generatingEyeshadowGuide = false);
+      }
+    }
+  }
+
+  // ✅ FIXED: Real painter generation for eyeliner guide
   Future<void> _ensureEyelinerGuideGenerated() async {
     if (_eyelinerGuideImagePath != null || _generatingEyelinerGuide) return;
-    if (widget.scannedImagePath == null || widget.detectedFace == null) return;
+    if (widget.detectedFace == null || widget.scannedImagePath == null) return;
 
-    setState(() {
-      _generatingEyelinerGuide = true;
-    });
+    setState(() => _generatingEyelinerGuide = true);
 
     try {
-      final image = await _loadUiImageFromFile(widget.scannedImagePath!);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-
-      final size = Size(image.width.toDouble(), image.height.toDouble());
-
-      canvas.drawImage(image, Offset.zero, Paint());
-
-      EyelinerGuidePainter(
-        face: widget.detectedFace!,
-        preset: widget.selectedPreset,
-        guideColor: const Color(0xFFFF4D97),
-      ).paint(canvas, size);
-
-      final picture = recorder.endRecording();
-      final fullGuide = await picture.toImage(image.width, image.height);
-
-      final cropRect = _computeEyeCropRect(widget.detectedFace!, fullGuide);
-      if (cropRect == null) return;
-
-      final path = await _saveCroppedImage(
-        source: fullGuide,
-        cropRect: cropRect,
+      final path = await _createGuideImage(
         prefix: 'eyeliner_guide_',
+        painter: EyelinerGuidePainter(
+          face: widget.detectedFace!,
+          config: _config,
+          guideColor: const Color(0xFFFF4D97),
+        ),
       );
 
       if (!mounted) return;
 
-      setState(() {
-        _eyelinerGuideImagePath = path;
-      });
+      setState(() => _eyelinerGuideImagePath = path);
     } finally {
-      if (!mounted) return;
-
-      setState(() {
-        _generatingEyelinerGuide = false;
-      });
+      if (mounted) {
+        setState(() => _generatingEyelinerGuide = false);
+      }
     }
   }
 
-  Future<void> _generateAIInstructions() async {
-    setState(() {
-      _loadingAI = true;
-      _aiSteps = [];
-      _aiError = null;
-      _currentPage = 0;
-    });
-
+  // ✅ Helper: Get AI step for fixed step
+  Map<String, dynamic> _getAiStepForFixedStep(int stepNumber, String targetArea) {
     try {
-      final steps = await _openAI.generateMakeupInstructions(
-        lookName: widget.look.lookName,
-        skinTone: widget.faceProfile?.skinTone.name,
-        undertone: widget.faceProfile?.undertone.name,
-        faceShape: widget.faceProfile?.faceShape.name,
+      return _aiSteps.firstWhere(
+        (s) =>
+            s['stepNumber'] == stepNumber ||
+            s['stepNumber']?.toString() == stepNumber.toString() ||
+            s['targetArea'] == targetArea,
       );
-
-      if (!mounted) return;
-
-      setState(() {
-        _aiSteps = steps;
-      });
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _pageController.jumpToPage(0);
-        }
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _aiError = 'Failed to load AI instructions: $e';
-        _aiSteps = [];
-      });
-    } finally {
-      if (!mounted) return;
-
-      setState(() {
-        _loadingAI = false;
-      });
+    } catch (_) {
+      return {};
     }
   }
 
-  void _goToNextPage() {
-    if (_currentPage < _aiSteps.length - 1) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOut,
-      );
+  // ✅ Helper: Clean why text
+  String _cleanWhyText(String raw, String targetArea) {
+    final text = raw.trim();
+
+    if (text.isEmpty || text.contains('Color(') || text.contains('colorSpace')) {
+      if (targetArea == 'blush_contour') {
+        return 'This blush and contour placement helps add warmth, shape, and soft dimension to your face.';
+      }
+
+      if (targetArea == 'eyeshadow') {
+        return 'This eyeshadow placement helps add soft depth while keeping the look balanced and wearable.';
+      }
+
+      if (targetArea == 'eyeliner') {
+        return 'This eyeliner shape helps define your eyes while matching the overall style of the look.';
+      }
+
+      if (targetArea == 'lips') {
+        return 'This lip color helps balance the look and complements your natural skin tone.';
+      }
+
+      if (targetArea == 'full_makeup') {
+        return 'This final look brings all the colors and placements together for a balanced finish.';
+      }
+
+      return '';
     }
+
+    return text;
   }
 
-  Widget _buildIntroSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          widget.look.lookName,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFFFF4D97),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Here are your personalized AI makeup instructions for this look.',
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[700],
-            height: 1.5,
-          ),
-        ),
-      ],
-    );
+  // ✅ Helper: Ensure guide for target area
+  void _ensureGuideForTargetArea(String targetArea) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (targetArea == 'full_face') _ensureBasePrepGuideGenerated();
+      if (targetArea == 'brows') _ensureEyebrowGuideGenerated();
+      if (targetArea == 'eyeshadow') _ensureEyeshadowGuideGenerated();
+      if (targetArea == 'eyeliner') _ensureEyelinerGuideGenerated();
+      if (targetArea == 'lips') _ensureLipGuideGenerated();
+    });
+  }
+
+  Future<ui.Image> _loadUiImageFromFile(String path) async {
+    final bytes = await File(path).readAsBytes();
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    return frame.image;
   }
 
   Widget _buildWhyThisColorSection({
@@ -608,47 +384,36 @@ class _InstructionsPageState extends State<InstructionsPage> {
     required String description,
   }) {
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 14),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.85),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: const Color(0xFFFF4D97).withOpacity(0.18),
-        ),
+        color: const Color(0xFFFF4D97).withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.auto_awesome,
-                size: 18,
-                color: Color(0xFFFF4D97),
-              ),
+              Icon(Icons.color_lens, size: 16, color: const Color(0xFFFF4D97)),
               const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFFFF4D97),
-                  ),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFFF4D97),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             description,
             style: TextStyle(
               fontSize: 13,
-              color: Colors.grey[800],
-              height: 1.6,
+              color: Colors.grey[700],
+              height: 1.4,
             ),
           ),
         ],
@@ -657,103 +422,83 @@ class _InstructionsPageState extends State<InstructionsPage> {
   }
 
   Widget _buildAIStepsPager() {
-    if (_loadingAI) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFF4D97).withOpacity(0.05),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: const Color(0xFFFF4D97).withOpacity(0.15),
+    const fixedStepOrder = [
+      {
+        'stepNumber': 1,
+        'title': 'Base Prep',
+        'targetArea': 'full_face',
+        'fallbackInstruction':
+            'Prep your skin by priming the T-zone, hydrating the cheeks, and brightening the under-eye area.',
+      },
+      {
+        'stepNumber': 2,
+        'title': 'Eyebrows',
+        'targetArea': 'brows',
+        'fallbackInstruction':
+            'Define your brows softly by following your natural brow shape.',
+      },
+      {
+        'stepNumber': 3,
+        'title': 'Eyeshadow',
+        'targetArea': 'eyeshadow',
+        'fallbackInstruction':
+            'Apply the main shade on the lid, blend the crease, then add depth to the outer corner.',
+      },
+      {
+        'stepNumber': 4,
+        'title': 'Eyeliner',
+        'targetArea': 'eyeliner',
+        'fallbackInstruction':
+            'Draw close to the upper lash line, connect the outer edge, then flick outward for the wing.',
+      },
+      {
+        'stepNumber': 5,
+        'title': 'Blush / Contour',
+        'targetArea': 'blush_contour',
+        'fallbackInstruction':
+            'Apply blush on the upper cheek area, then contour lightly below the cheekbone for shape.',
+      },
+      {
+        'stepNumber': 6,
+        'title': 'Lips',
+        'targetArea': 'lips',
+        'fallbackInstruction':
+            'Apply your lip color from the center outward and blend evenly for a polished finish.',
+      },
+      {
+        'stepNumber': 7,
+        'title': 'Final Look',
+        'targetArea': 'full_makeup',
+        'fallbackInstruction':
+            'Set your makeup with a light spray using X and T motion, then check the final blend.',
+      },
+    ];
+
+    // Replace with loading text when generating AI steps
+    if (_loadingAI && _aiSteps.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Generating your personalized tutorial...',
+            textAlign: TextAlign.center,
           ),
-        ),
-        child: Row(
-          children: [
-            const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Generating personalized AI instructions...',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[700],
-                  height: 1.5,
-                ),
-              ),
-            ),
-          ],
         ),
       );
     }
 
     if (_aiError != null) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.red.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: Colors.red.withOpacity(0.15),
-          ),
-        ),
-        child: Text(
-          _aiError!,
-          style: TextStyle(
-            fontSize: 13,
-            color: Colors.red[700],
-            height: 1.5,
-          ),
-        ),
+      return Text(
+        _aiError!,
+        style: const TextStyle(color: Colors.red),
       );
     }
 
     if (_aiSteps.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FilledButton.icon(
-            onPressed: _generateAIInstructions,
-            icon: const Icon(Icons.auto_awesome),
-            label: const Text('Generate AI Tips (GPT)'),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFF4D97),
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 52),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Text(
-              'Tap "Generate AI Tips (GPT)" to create your 7-step personalized makeup tutorial.',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey[700],
-                height: 1.5,
-              ),
-            ),
-          ),
-        ],
-      );
+      return const SizedBox.shrink();
     }
 
-    final currentStep = _aiSteps[_currentPage];
-    final isLastPage = _currentPage == _aiSteps.length - 1;
+    final isLastPage = _currentPage == 6;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -767,56 +512,44 @@ class _InstructionsPageState extends State<InstructionsPage> {
           ),
         ),
         const SizedBox(height: 12),
+
         SizedBox(
           height: 470,
           child: PageView.builder(
             controller: _pageController,
-            itemCount: _aiSteps.length,
+            itemCount: 7,
             onPageChanged: (index) {
-              setState(() {
-                _currentPage = index;
-              });
+              setState(() => _currentPage = index);
+              
+              // ✅ Trigger guide generation when page changes
+              final fixedStep = fixedStepOrder[index];
+              final targetArea = fixedStep['targetArea'].toString();
+              _ensureGuideForTargetArea(targetArea);
             },
             itemBuilder: (context, index) {
-              final step = _aiSteps[index];
-              final stepNumber = step['stepNumber']?.toString() ?? '';
-              final title = step['title']?.toString() ?? '';
-              final instruction = step['instruction']?.toString() ?? '';
-              final whyThisColorSuitsYou =
-                  step['whyThisColorSuitsYou']?.toString() ?? '';
-              final targetArea = step['targetArea']?.toString() ?? '';
-              final isFinalLookStep = step['stepNumber'] == 7;
+              final fixedStep = fixedStepOrder[index];
 
-              // Trigger guide generation based on target area
-              if (targetArea == 'lips') {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _ensureLipGuideGenerated();
-                });
-              }
-              
-              if (targetArea == 'brows') {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _ensureEyebrowGuideGenerated();
-                });
-              }
+              final stepNumber = fixedStep['stepNumber'].toString();
+              final title = fixedStep['title'].toString();
+              final targetArea = fixedStep['targetArea'].toString();
 
-              if (targetArea == 'full_face') {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _ensureBasePrepGuideGenerated();
-                });
-              }
+              // ✅ Replace AI step matching with helper
+              final aiStep = _getAiStepForFixedStep(index + 1, targetArea);
 
-              if (targetArea == 'eyeshadow') {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _ensureEyeshadowGuideGenerated();
-                });
-              }
+              final instruction =
+                  aiStep['instruction']?.toString() ??
+                  fixedStep['fallbackInstruction'].toString();
 
-              if (targetArea == 'eyeliner') {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _ensureEyelinerGuideGenerated();
-                });
-              }
+              // ✅ Replace why text with cleaned version
+              final whyThisColorSuitsYou = _cleanWhyText(
+                aiStep['whyThisColorSuitsYou']?.toString() ?? '',
+                targetArea,
+              );
+
+              final isFinalLookStep = targetArea == 'full_makeup';
+
+              // ✅ Replace guide trigger block
+              _ensureGuideForTargetArea(targetArea);
 
               return Container(
                 width: double.infinity,
@@ -850,6 +583,7 @@ class _InstructionsPageState extends State<InstructionsPage> {
                           height: 1.7,
                         ),
                       ),
+
                       if (whyThisColorSuitsYou.trim().isNotEmpty)
                         _buildWhyThisColorSection(
                           title: isFinalLookStep
@@ -857,180 +591,106 @@ class _InstructionsPageState extends State<InstructionsPage> {
                               : 'Why this color suits you',
                           description: whyThisColorSuitsYou,
                         ),
+
                       const SizedBox(height: 18),
-                      Text(
-                        'Target Area: $targetArea',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                      // Add lip guide card if target area is lips
-                      if (targetArea == 'lips') ...[
-                        const SizedBox(height: 18),
-                        if (_generatingLipGuide)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
-                        else if (_lipGuideImagePath != null)
-                          LipGuideCard(imagePath: _lipGuideImagePath!),
-                      ],
-                      // Add eyebrow guide card if target area is brows
-                      if (targetArea == 'brows') ...[
-                        const SizedBox(height: 18),
-                        if (_generatingEyebrowGuide)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
-                        else if (_eyebrowGuideImagePath != null)
-                          EyebrowGuideCard(imagePath: _eyebrowGuideImagePath!),
-                      ],
-                      // Add base prep guide card if target area is full_face
+
                       if (targetArea == 'full_face') ...[
-                        const SizedBox(height: 18),
                         if (_generatingBasePrepGuide)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
+                          const Center(child: CircularProgressIndicator())
                         else if (_basePrepGuideImagePath != null)
                           BasePrepGuideCard(imagePath: _basePrepGuideImagePath!),
                       ],
-                      // Add eyeshadow guide card if target area is eyeshadow
+
+                      if (targetArea == 'brows') ...[
+                        if (_generatingEyebrowGuide)
+                          const Center(child: CircularProgressIndicator())
+                        else if (_eyebrowGuideImagePath != null)
+                          EyebrowGuideCard(imagePath: _eyebrowGuideImagePath!),
+                      ],
+
                       if (targetArea == 'eyeshadow') ...[
-                        const SizedBox(height: 18),
                         if (_generatingEyeshadowGuide)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
+                          const Center(child: CircularProgressIndicator())
                         else if (_eyeshadowGuideImagePath != null)
-                          EyeshadowGuideCard(imagePath: _eyeshadowGuideImagePath!),
-                      ],
-                      // Add eyeliner guide card if target area is eyeliner
-                      if (targetArea == 'eyeliner') ...[
-                        const SizedBox(height: 18),
-                        if (_generatingEyelinerGuide)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
-                        else if (_eyelinerGuideImagePath != null)
-                          EyelinerGuideCard(imagePath: _eyelinerGuideImagePath!),
-                      ],
-                      // Add blush/contour guide card if target area is blush_contour
-                      if (targetArea == 'blush_contour') ...[
-                        const SizedBox(height: 18),
-                        if (widget.detectedFace != null && widget.scannedImagePath != null)
                           FutureBuilder<ui.Image>(
-                            future: _loadUiImageFromFile(widget.scannedImagePath!),
+                            future: _loadUiImageFromFile(_eyeshadowGuideImagePath!),
                             builder: (context, snapshot) {
-                              if (snapshot.hasData) {
-                                return BlushContourGuideCard(
-                                  face: widget.detectedFace!,
-                                  preset: widget.selectedPreset,
-                                  image: snapshot.data!,
-                                );
-                              } else if (snapshot.hasError) {
-                                return Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Text(
-                                    'Error loading image: ${snapshot.error}',
-                                    style: const TextStyle(color: Colors.red),
-                                  ),
-                                );
+                              if (!snapshot.hasData) {
+                                return const Center(child: CircularProgressIndicator());
                               }
-                              return Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
+
+                              return EyeshadowGuideCard(
+                                face: widget.detectedFace!,
+                                config: _config,
+                                image: snapshot.data!,
                               );
                             },
                           ),
                       ],
-                      // Add final look guide card if target area is full_makeup
-                      if (targetArea == 'full_makeup') ...[
-                        const SizedBox(height: 18),
-                        if (widget.detectedFace != null && widget.scannedImagePath != null)
+
+                      if (targetArea == 'eyeliner') ...[
+                        if (_generatingEyelinerGuide)
+                          const Center(child: CircularProgressIndicator())
+                        else if (_eyelinerGuideImagePath != null)
+                          FutureBuilder<ui.Image>(
+                            future: _loadUiImageFromFile(_eyelinerGuideImagePath!),
+                            builder: (context, snapshot) {
+                              if (!snapshot.hasData) {
+                                return const Center(child: CircularProgressIndicator());
+                              }
+
+                              return EyelinerGuideCard(
+                                face: widget.detectedFace!,
+                                config: _config,
+                                image: snapshot.data!,
+                              );
+                            },
+                          ),
+                      ],
+
+                      if (targetArea == 'blush_contour') ...[
+                        if (widget.detectedFace != null &&
+                            widget.scannedImagePath != null)
                           FutureBuilder<ui.Image>(
                             future: _loadUiImageFromFile(widget.scannedImagePath!),
                             builder: (context, snapshot) {
-                              if (snapshot.hasData) {
-                                return FinalLookGuideCard(
-                                  face: widget.detectedFace!,
-                                  image: snapshot.data!,
-                                );
-                              } else if (snapshot.hasError) {
-                                return Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Text(
-                                    'Error loading image: ${snapshot.error}',
-                                    style: const TextStyle(color: Colors.red),
-                                  ),
+                              if (!snapshot.hasData) {
+                                return const Center(
+                                  child: CircularProgressIndicator(),
                                 );
                               }
-                              return Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: const Center(
+
+                              return BlushContourGuideCard(
+                                face: widget.detectedFace!,
+                                config: _config,
+                                image: snapshot.data!,
+                              );
+                            },
+                          ),
+                      ],
+
+                      if (targetArea == 'lips') ...[
+                        if (_generatingLipGuide)
+                          const Center(child: CircularProgressIndicator())
+                        else if (_lipGuideImagePath != null)
+                          LipGuideCard(imagePath: _lipGuideImagePath!),
+                      ],
+
+                      if (targetArea == 'full_makeup') ...[
+                        if (widget.detectedFace != null &&
+                            widget.scannedImagePath != null)
+                          FutureBuilder<ui.Image>(
+                            future: _loadUiImageFromFile(widget.scannedImagePath!),
+                            builder: (context, snapshot) {
+                              if (!snapshot.hasData) {
+                                return const Center(
                                   child: CircularProgressIndicator(),
-                                ),
+                                );
+                              }
+
+                              return FinalLookGuideCard(
+                                face: widget.detectedFace!,
+                                image: snapshot.data!,
                               );
                             },
                           ),
@@ -1042,10 +702,12 @@ class _InstructionsPageState extends State<InstructionsPage> {
             },
           ),
         ),
+
         const SizedBox(height: 16),
+
         Center(
           child: Text(
-            'Step ${currentStep['stepNumber']} of ${_aiSteps.length}',
+            'Step ${_currentPage + 1} of 7',
             style: TextStyle(
               fontSize: 13,
               color: Colors.grey[700],
@@ -1053,11 +715,14 @@ class _InstructionsPageState extends State<InstructionsPage> {
             ),
           ),
         ),
+
         const SizedBox(height: 10),
+
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(_aiSteps.length, (index) {
+          children: List.generate(7, (index) {
             final isActive = index == _currentPage;
+
             return AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -1072,7 +737,9 @@ class _InstructionsPageState extends State<InstructionsPage> {
             );
           }),
         ),
+
         const SizedBox(height: 20),
+
         if (!isLastPage)
           FilledButton(
             onPressed: _goToNextPage,
@@ -1080,37 +747,27 @@ class _InstructionsPageState extends State<InstructionsPage> {
               backgroundColor: const Color(0xFFFF4D97),
               foregroundColor: Colors.white,
               minimumSize: const Size(double.infinity, 52),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
             ),
             child: const Text('Next'),
           ),
+
         if (isLastPage) ...[
           FilledButton(
-            onPressed: () {},
+            onPressed: () => Navigator.pop(context),
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFFF4D97),
               foregroundColor: Colors.white,
               minimumSize: const Size(double.infinity, 52),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
             ),
             child: const Text('Scan Face'),
           ),
           const SizedBox(height: 12),
           OutlinedButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(context),
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFFFF4D97),
               side: const BorderSide(color: Color(0xFFFF4D97)),
               minimumSize: const Size(double.infinity, 52),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
             ),
             child: const Text('Back'),
           ),
@@ -1123,29 +780,18 @@ class _InstructionsPageState extends State<InstructionsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          '${widget.look.lookName} Tutorial',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        title: Text(widget.look.lookName),
+        backgroundColor: const Color(0xFFFF4D97),
+        foregroundColor: Colors.white,
       ),
-      body: ListView(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        children: [
-          _buildIntroSection(),
-          const SizedBox(height: 24),
-          _buildAIStepsPager(),
-          const SizedBox(height: 16),
-          Text(
-            'Note: AI tips use your look name and skin analysis. No face image data is sent.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[500],
-                ),
-          ),
-          const SizedBox(height: 24),
-        ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildAIStepsPager(),
+          ],
+        ),
       ),
     );
   }

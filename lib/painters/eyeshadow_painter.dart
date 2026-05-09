@@ -27,7 +27,7 @@ class EyeshadowPainter {
   });
 
   void paint(Canvas canvas, Size size) {
-    if (intensity <= 0) return;
+    if (intensity <= 0.001) return;
 
     _paintEye(
       canvas: canvas,

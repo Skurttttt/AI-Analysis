@@ -2,7 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
-import '../look_engine.dart';
+import '../config/makeup_look_config.dart';
 
 class EyeshadowGuidePalette {
   final Color lidColor;
@@ -20,12 +20,12 @@ class EyeshadowGuidePalette {
 
 class EyeshadowGuidePainter extends CustomPainter {
   final Face face;
-  final MakeupLookPreset preset;
+  final MakeupLookConfig config;
   final EyeshadowGuidePalette palette;
 
   const EyeshadowGuidePainter({
     required this.face,
-    required this.preset,
+    required this.config,
     required this.palette,
   });
 
@@ -51,88 +51,6 @@ class EyeshadowGuidePainter extends CustomPainter {
         .toList(growable: false);
   }
 
-  _EyeshadowPlacement _placementForPreset(MakeupLookPreset preset) {
-    switch (preset) {
-      case MakeupLookPreset.softGlam:
-        return const _EyeshadowPlacement(
-          lidHeight: 0.78,
-          lidOpacity: 0.30,
-          creaseLift: 0.50,
-          creaseOpacity: 0.36,
-          outerSize: 0.28,
-          outerOpacity: 0.42,
-          outerLift: 0.12,
-          showLowerLash: false,
-          showOuterV: true,
-        );
-
-      case MakeupLookPreset.emo:
-        return const _EyeshadowPlacement(
-          lidHeight: 0.95,
-          lidOpacity: 0.42,
-          creaseLift: 0.42,
-          creaseOpacity: 0.42,
-          outerSize: 0.42,
-          outerOpacity: 0.58,
-          outerLift: 0.02,
-          showLowerLash: true,
-          showOuterV: true,
-        );
-
-      case MakeupLookPreset.dollKBeauty:
-        return const _EyeshadowPlacement(
-          lidHeight: 0.58,
-          lidOpacity: 0.22,
-          creaseLift: 0.32,
-          creaseOpacity: 0.20,
-          outerSize: 0.18,
-          outerOpacity: 0.24,
-          outerLift: 0.00,
-          showLowerLash: true,
-          showOuterV: false,
-        );
-
-      case MakeupLookPreset.bronzedGoddess:
-        return const _EyeshadowPlacement(
-          lidHeight: 0.82,
-          lidOpacity: 0.36,
-          creaseLift: 0.55,
-          creaseOpacity: 0.40,
-          outerSize: 0.34,
-          outerOpacity: 0.50,
-          outerLift: 0.18,
-          showLowerLash: false,
-          showOuterV: true,
-        );
-
-      case MakeupLookPreset.boldEditorial:
-        return const _EyeshadowPlacement(
-          lidHeight: 1.05,
-          lidOpacity: 0.45,
-          creaseLift: 0.72,
-          creaseOpacity: 0.45,
-          outerSize: 0.48,
-          outerOpacity: 0.62,
-          outerLift: 0.26,
-          showLowerLash: true,
-          showOuterV: true,
-        );
-
-      case MakeupLookPreset.debugPainterTest:
-        return const _EyeshadowPlacement(
-          lidHeight: 1.05,
-          lidOpacity: 0.45,
-          creaseLift: 0.72,
-          creaseOpacity: 0.45,
-          outerSize: 0.48,
-          outerOpacity: 0.62,
-          outerLift: 0.26,
-          showLowerLash: true,
-          showOuterV: true,
-        );
-    }
-  }
-
   void _drawEye(
     Canvas canvas,
     List<Offset> eyePoints, {
@@ -144,7 +62,8 @@ class EyeshadowGuidePainter extends CustomPainter {
     final eyeBounds = _boundsOf(points);
     final eyeW = max(eyeBounds.width, 1.0);
     final eyeH = max(eyeBounds.height, 8.0);
-    final style = _placementForPreset(preset);
+    
+    final style = config.eyeshadow;
 
     final innerX = eyeBounds.left;
     final outerX = eyeBounds.right;
@@ -479,31 +398,7 @@ class EyeshadowGuidePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant EyeshadowGuidePainter oldDelegate) {
     return oldDelegate.face != face ||
-        oldDelegate.preset != preset ||
+        oldDelegate.config != config ||
         oldDelegate.palette != palette;
   }
-}
-
-class _EyeshadowPlacement {
-  final double lidHeight;
-  final double lidOpacity;
-  final double creaseLift;
-  final double creaseOpacity;
-  final double outerSize;
-  final double outerOpacity;
-  final double outerLift;
-  final bool showLowerLash;
-  final bool showOuterV;
-
-  const _EyeshadowPlacement({
-    required this.lidHeight,
-    required this.lidOpacity,
-    required this.creaseLift,
-    required this.creaseOpacity,
-    required this.outerSize,
-    required this.outerOpacity,
-    required this.outerLift,
-    required this.showLowerLash,
-    required this.showOuterV,
-  });
 }
